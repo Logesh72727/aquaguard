@@ -47,7 +47,7 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyDcU_GuD9cQqCtKn_pElZNbQvn_aVEQpM4',
+    apiKey: 'your api key',
     appId: '1:855373928998:web:812ead9a87915c1319a4e7',
     messagingSenderId: '855373928998',
     projectId: 'aquaguard-b0b2c',
@@ -58,7 +58,7 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDr3Da_N9fW-pxKlF-z5uCKjk6vlsNGy70',
+    apiKey: 'your api key',
     appId: '1:855373928998:android:b34e54df09c39f6519a4e7',
     messagingSenderId: '855373928998',
     projectId: 'aquaguard-b0b2c',
@@ -68,7 +68,7 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBu_uA6BOGTEO_RUdgBj4GP4oM_cBAgsas',
+    apiKey: 'your api key',
     appId: '1:855373928998:ios:1c6b52dd0920883e19a4e7',
     messagingSenderId: '855373928998',
     projectId: 'aquaguard-b0b2c',
