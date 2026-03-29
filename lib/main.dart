@@ -1,23 +1,147 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:math' as math;
+import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:device_apps/device_apps.dart';
 import 'dart:async';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../generated/app_localizations.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 // Remove the problematic import and use a placeholder for localization
-import 'dart:math';
+
 final modelUrl = 'https://aquaguardmlapi.onrender.com';
+
+// ---------------------- PREMIUM DESIGN SYSTEM ----------------------
+class AppDesign {
+  // Superb Color Palette
+  static const Color primaryNavy = Color(0xFF001F3F);
+  static const Color electricBlue = Color(0xFF0074D9);
+  static const Color aquaCyan = Color(0xFF7FDBFF);
+  static const Color deepTeal = Color(0xFF39CCCC);
+  static const Color glassWhite = Color(0x33FFFFFF);
+  static const Color premiumGold = Color(0xFFFFD700);
+
+  // Gradients
+  static const LinearGradient primaryGradient = LinearGradient(
+    colors: [primaryNavy, electricBlue],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const LinearGradient accentGradient = LinearGradient(
+    colors: [electricBlue, aquaCyan],
+    begin: Alignment.centerLeft,
+    end: Alignment.centerRight,
+  );
+
+  static const LinearGradient glassGradient = LinearGradient(
+    colors: [Color(0x4DFFFFFF), Color(0x1AFFFFFF)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  // Shadows
+  static List<BoxShadow> premiumShadows = [
+    BoxShadow(
+      color: Colors.black.withOpacity(0.1),
+      blurRadius: 20,
+      offset: const Offset(0, 10),
+    ),
+    BoxShadow(
+      color: electricBlue.withOpacity(0.2),
+      blurRadius: 30,
+      offset: const Offset(0, 5),
+    ),
+  ];
+
+  // Glassmorphism Decoration
+  static BoxDecoration glassDecoration({double radius = 20}) {
+    return BoxDecoration(
+      color: glassWhite,
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(color: Colors.white.withOpacity(0.2), width: 1.5),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.05),
+          blurRadius: 15,
+          spreadRadius: 2,
+        )
+      ],
+    );
+  }
+
+  static BoxDecoration mainGradientDecoration() {
+    return const BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [Color(0xFFF8FAFC), Color(0xFFF1F5F9), Color(0xFFE2E8F0)],
+      ),
+    );
+  }
+
+  static BoxDecoration premiumHeaderDecoration() {
+    return const BoxDecoration(
+      gradient: primaryGradient,
+      borderRadius: BorderRadius.only(
+        bottomLeft: Radius.circular(30),
+        bottomRight: Radius.circular(30),
+      ),
+    );
+  }
+}
+
+// Responsive Layout Helper
+class ResponsiveLayout extends StatelessWidget {
+  final Widget mobile;
+  final Widget? tablet;
+  final Widget web;
+
+  const ResponsiveLayout({
+    super.key,
+    required this.mobile,
+    this.tablet,
+    required this.web,
+  });
+
+  static bool isMobile(BuildContext context) =>
+      MediaQuery.of(context).size.width < 600;
+
+  static bool isTablet(BuildContext context) =>
+      MediaQuery.of(context).size.width >= 600 &&
+      MediaQuery.of(context).size.width < 1200;
+
+  static bool isWeb(BuildContext context) =>
+      MediaQuery.of(context).size.width >= 1200;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 1200) {
+          return Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 1400),
+              child: web,
+            ),
+          );
+        } else if (constraints.maxWidth >= 600) {
+          return tablet ?? web;
+        } else {
+          return mobile;
+        }
+      },
+    );
+  }
+}
 
 // Placeholder for localization since we can't generate the files
 class S {
@@ -84,13 +208,17 @@ class AlertSystem {
     switch (userType) {
       case 'health_official':
         return {
-          'outbreak_alert': 'URGENT: Disease outbreak detected. Dispatch medical teams immediately.',
-          'resource_request': 'Need additional resources for outbreak response.',
-          'preventive_measures': 'Initiate preventive measures in high-risk areas.'
+          'outbreak_alert':
+              'URGENT: Disease outbreak detected. Dispatch medical teams immediately.',
+          'resource_request':
+              'Need additional resources for outbreak response.',
+          'preventive_measures':
+              'Initiate preventive measures in high-risk areas.'
         };
       case 'village_leader':
         return {
-          'water_contamination': 'WARNING: Water source contaminated. Boil water before use.',
+          'water_contamination':
+              'WARNING: Water source contaminated. Boil water before use.',
           'community_meeting': 'Emergency community meeting scheduled.',
           'health_alert': 'Health alert: Increased disease cases in village.'
         };
@@ -101,9 +229,7 @@ class AlertSystem {
           'follow_up': 'Patient follow-up needed for suspected cases.'
         };
       default:
-        return {
-          'general': 'Important community health announcement.'
-        };
+        return {'general': 'Important community health announcement.'};
     }
   }
 }
@@ -124,7 +250,8 @@ class HealthSurveillanceApp extends StatefulWidget {
 
   // Method to update locale from anywhere in the app
   static void setLocale(BuildContext context, Locale newLocale) {
-    _HealthSurveillanceAppState? state = context.findAncestorStateOfType<_HealthSurveillanceAppState>();
+    _HealthSurveillanceAppState? state =
+        context.findAncestorStateOfType<_HealthSurveillanceAppState>();
     state?.setLocale(newLocale);
   }
 }
@@ -136,7 +263,7 @@ class _HealthSurveillanceAppState extends State<HealthSurveillanceApp> {
     setState(() {
       _locale = newLocale;
     });
-    
+
     // Save the preference
     _saveLocalePreference(newLocale);
   }
@@ -167,12 +294,44 @@ class _HealthSurveillanceAppState extends State<HealthSurveillanceApp> {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2A7FBA),
-          primary: const Color(0xFF2A7FBA),
-          secondary: const Color(0xFF4CAF50),
+          seedColor: AppDesign.electricBlue,
+          primary: AppDesign.electricBlue,
+          secondary: AppDesign.deepTeal,
+          surface: Colors.white,
+          onSurface: AppDesign.primaryNavy,
         ),
         useMaterial3: true,
         textTheme: GoogleFonts.interTextTheme(),
+        appBarTheme: AppBarTheme(
+          backgroundColor: AppDesign.electricBlue,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          centerTitle: true,
+          titleTextStyle: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        cardTheme: CardThemeData(
+          elevation: 5,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shadowColor: AppDesign.electricBlue.withOpacity(0.1),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppDesign.electricBlue,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            elevation: 8,
+            textStyle: GoogleFonts.poppins(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+        ),
       ),
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
@@ -277,7 +436,11 @@ class _SplashScreenState extends State<SplashScreen>
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF001F3F), Color(0xFF0074D9)], // deep navy → aqua
+            colors: [
+              AppDesign.primaryNavy,
+              AppDesign.electricBlue,
+              AppDesign.deepTeal
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -386,7 +549,7 @@ class FancyNPainter extends CustomPainter {
 
     for (final metric in metrics) {
       if (drawLength <= 0) break;
-      final take = math.min(metric.length, drawLength);
+      final take = min(metric.length, drawLength);
       drawnPath.addPath(metric.extractPath(0.0, take), Offset.zero);
       drawLength -= take;
     }
@@ -395,8 +558,7 @@ class FancyNPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant FancyNPainter old) =>
-      old.progress != progress;
+  bool shouldRepaint(covariant FancyNPainter old) => old.progress != progress;
 }
 
 // ---------------------- LANGUAGE SELECTION SCREEN ----------------------
@@ -405,7 +567,8 @@ class LanguageSelectionScreen extends StatefulWidget {
   const LanguageSelectionScreen({super.key});
 
   @override
-  State<LanguageSelectionScreen> createState() => _LanguageSelectionScreenState();
+  State<LanguageSelectionScreen> createState() =>
+      _LanguageSelectionScreenState();
 }
 
 class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
@@ -452,12 +615,12 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
   Future<void> _loadCurrentLanguage() async {
     final prefs = await SharedPreferences.getInstance();
     final languageCode = prefs.getString('language_code') ?? 'ta';
-    
+
     final currentLanguage = languages.firstWhere(
       (lang) => lang['code'] == languageCode,
       orElse: () => {'name': 'Tamil', 'code': 'ta'},
     );
-    
+
     setState(() {
       _selectedLanguage = currentLanguage['name']!;
     });
@@ -466,18 +629,22 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
   List<Map<String, String>> get filteredLanguages {
     if (_searchQuery.isEmpty) return languages;
     return languages.where((language) {
-      return language['name']!.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          language['nativeName']!.toLowerCase().contains(_searchQuery.toLowerCase());
+      return language['name']!
+              .toLowerCase()
+              .contains(_searchQuery.toLowerCase()) ||
+          language['nativeName']!
+              .toLowerCase()
+              .contains(_searchQuery.toLowerCase());
     }).toList();
   }
 
   Future<void> _setDefaultLanguage(String languageCode) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('language_code', languageCode);
-    
+
     // Update app locale
     HealthSurveillanceApp.setLocale(context, Locale(languageCode));
-    
+
     // Show success message
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -490,198 +657,215 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF0D47A1),
-              Color(0xFF1976D2),
-              Color(0xFF42A5F5),
-            ],
+      extendBodyBehindAppBar: true,
+      body: ResponsiveLayout(
+        mobile: _buildContent(),
+        web: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 500),
+            child: _buildContent(),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            AppDesign.primaryNavy,
+            AppDesign.electricBlue,
+            AppDesign.deepTeal,
+          ],
+        ),
+      ),
+      child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20.0),
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const SizedBox(height: 10),
-              Text(
-                'NIRAIVIZHI',
-                style: GoogleFonts.poppins(
-                  fontSize: 36,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                  letterSpacing: 2.0,
+              const SizedBox(height: 40),
+              // App Logo Title
+              ShaderMask(
+                shaderCallback: (bounds) =>
+                    AppDesign.accentGradient.createShader(bounds),
+                child: Text(
+                  'NIRAIVIZHI',
+                  style: GoogleFonts.poppins(
+                    fontSize: 40,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    letterSpacing: 4.0,
+                  ),
                 ),
               ),
-              const SizedBox(height: 10),
-
+              const SizedBox(height: 8),
               Text(
-                S.of(context).healthSurveillanceSystem, // Localized tagline
+                S.of(context).healthSurveillanceSystem.toUpperCase(),
+                textAlign: TextAlign.center,
                 style: GoogleFonts.poppins(
-                  fontSize: 16,
+                  fontSize: 14,
                   fontWeight: FontWeight.w500,
-                  color: Colors.white.withOpacity(0.9),
+                  color: Colors.white70,
+                  letterSpacing: 1.5,
                 ),
               ),
-
-              const SizedBox(height: 30),
-
+              const SizedBox(height: 40),
               Text(
-                S.of(context).selectYourLanguage, // Localized title
+                S.of(context).selectYourLanguage,
                 style: GoogleFonts.poppins(
-                  fontSize: 22,
+                  fontSize: 24,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                 ),
               ),
-
-              const SizedBox(height: 15),
-
-              Expanded(
-                child: Column(
-                  children: [
-                    // Search bar
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: S.of(context).searchLanguage,
-                          hintStyle: GoogleFonts.poppins(color: Colors.white70),
-                          prefixIcon: const Icon(Icons.search, color: Colors.white70),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        ),
-                        style: GoogleFonts.poppins(color: Colors.white),
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                          });
-                        },
-                      ),
-                    ),
-
-                    const SizedBox(height: 15),
-
-                    Expanded(
-                      child: filteredLanguages.isEmpty
-                          ? Center(
-                              child: Text(
-                                S.of(context).noLanguagesFound,
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            )
-                          : ListView.builder(
-                              itemCount: filteredLanguages.length,
-                              itemBuilder: (context, index) {
-                                final language = filteredLanguages[index];
-                                return Card(
-                                  color: _selectedLanguage == language['name']
-                                      ? Colors.white.withOpacity(0.9)
-                                      : Colors.white.withOpacity(0.7),
-                                  margin: const EdgeInsets.symmetric(vertical: 6),
-                                  child: ListTile(
-                                    leading: const Icon(Icons.language, color: Color(0xFF0D47A1)),
-                                    title: Text(
-                                      language['name']!,
-                                      style: GoogleFonts.poppins(
-                                        fontWeight: FontWeight.w600,
-                                        color: const Color(0xFF0D47A1),
-                                      ),
-                                    ),
-                                    subtitle: Text(
-                                      language['nativeName']!,
-                                      style: GoogleFonts.poppins(
-                                        color: const Color(0xFF0D47A1),
-                                      ),
-                                    ),
-                                    trailing: _selectedLanguage == language['name']
-                                        ? const Icon(Icons.check_circle, color: Color(0xFF0D47A1))
-                                        : null,
-                                    onTap: () {
-                                      final selectedLanguageCode = language['code']!;
-                                      final selectedLanguageName = language['name']!;
-                                      
-                                      setState(() {
-                                        _selectedLanguage = selectedLanguageName;
-                                      });
-                                      
-                                      _setDefaultLanguage(selectedLanguageCode);
-                                    },
-                                  ),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
+              const SizedBox(height: 20),
+              // Glassmorphism Search Bar
+              Container(
+                decoration: AppDesign.glassDecoration(radius: 15),
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: S.of(context).searchLanguage,
+                    hintStyle: GoogleFonts.poppins(color: Colors.white60),
+                    prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 15),
+                  ),
+                  style: GoogleFonts.poppins(color: Colors.white),
+                  onChanged: (value) => setState(() => _searchQuery = value),
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              Card(
-                color: Colors.white.withOpacity(0.7),
+              Expanded(
+                child: filteredLanguages.isEmpty
+                    ? Center(
+                        child: Text(
+                          S.of(context).noLanguagesFound,
+                          style: GoogleFonts.poppins(
+                              color: Colors.white, fontSize: 16),
+                        ),
+                      )
+                    : ListView.builder(
+                        physics: const BouncingScrollPhysics(),
+                        itemCount: filteredLanguages.length,
+                        itemBuilder: (context, index) {
+                          final language = filteredLanguages[index];
+                          final isSelected =
+                              _selectedLanguage == language['name'];
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            margin: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Colors.white
+                                  : Colors.white.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(15),
+                              border: Border.all(
+                                color: isSelected
+                                    ? AppDesign.aquaCyan
+                                    : Colors.white24,
+                                width: 2,
+                              ),
+                              boxShadow:
+                                  isSelected ? AppDesign.premiumShadows : null,
+                            ),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: isSelected
+                                    ? AppDesign.electricBlue
+                                    : Colors.white24,
+                                child: Icon(
+                                  Icons.language,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : Colors.white70,
+                                ),
+                              ),
+                              title: Text(
+                                language['name']!,
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.bold,
+                                  color: isSelected
+                                      ? AppDesign.primaryNavy
+                                      : Colors.white,
+                                ),
+                              ),
+                              subtitle: Text(
+                                language['nativeName']!,
+                                style: GoogleFonts.poppins(
+                                  color: isSelected
+                                      ? AppDesign.electricBlue
+                                      : Colors.white70,
+                                ),
+                              ),
+                              trailing: isSelected
+                                  ? const Icon(Icons.check_circle,
+                                      color: AppDesign.electricBlue)
+                                  : null,
+                              onTap: () {
+                                setState(() =>
+                                    _selectedLanguage = language['name']!);
+                                _setDefaultLanguage(language['code']!);
+                              },
+                            ),
+                          );
+                        },
+                      ),
+              ),
+              const SizedBox(height: 20),
+              // Glassmorphism Offline Switch
+              Container(
+                decoration: AppDesign.glassDecoration(radius: 15),
                 child: SwitchListTile(
                   title: Text(
                     S.of(context).offlineMode,
                     style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF0D47A1),
-                    ),
+                        fontWeight: FontWeight.bold, color: Colors.white),
                   ),
                   subtitle: Text(
                     S.of(context).offlineModeDescription,
                     style: GoogleFonts.poppins(
-                      color: const Color(0xFF0D47A1),
-                    ),
+                        color: Colors.white70, fontSize: 12),
                   ),
                   value: _offlineMode,
-                  onChanged: (value) {
-                    setState(() {
-                      _offlineMode = value;
-                    });
-                  },
-                  activeColor: Colors.black,
+                  onChanged: (value) => setState(() => _offlineMode = value),
+                  activeColor: AppDesign.aquaCyan,
                 ),
               ),
-
               const SizedBox(height: 25),
-
-              SizedBox(
+              // Premium Button
+              Container(
                 width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(15),
+                  gradient: AppDesign.accentGradient,
+                  boxShadow: AppDesign.premiumShadows,
+                ),
                 child: ElevatedButton(
                   onPressed: () {
                     Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(builder: (context) => const UserPortalScreen()),
+                      MaterialPageRoute(
+                          builder: (context) => const UserPortalScreen()),
                     );
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFF0D47A1),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 5,
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(vertical: 18),
                   ),
                   child: Text(
                     S.of(context).continueText,
                     style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                        fontSize: 18, fontWeight: FontWeight.w800),
                   ),
                 ),
               ),
+              const SizedBox(height: 30),
             ],
           ),
         ),
@@ -744,135 +928,184 @@ class _UserPortalScreenState extends State<UserPortalScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Color(0xFF87CEEB), // Sky Blue
-              Color(0xFFB3E5FC), // Light Blue
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              const SizedBox(height: 30),
-              // App Logo/Title
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.health_and_safety, 
-                         color: Color(0xFF1976D2), size: 32),
-                    const SizedBox(width: 12),
-                    Text(
-                      'NIRAIVIZHI',
-                      style: GoogleFonts.poppins(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1976D2),
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              // Instruction text
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Text(
-                  'Select your portal to continue',
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    color: Color(0xFF546E7A),
-                    fontWeight: FontWeight.w500,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              const SizedBox(height: 30),
-              // Vertical portal list
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  itemCount: portals.length,
-                  itemBuilder: (context, index) {
-                    return _buildPortalCard(portals[index]);
-                  },
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
+      body: ResponsiveLayout(
+        mobile: _buildContent(),
+        web: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 500),
+            child: _buildContent(),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildPortalCard(Map<String, dynamic> portal) {
+  Widget _buildContent() {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      height: 90,
-      child: Card(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppDesign.primaryNavy, AppDesign.electricBlue],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () {
-            if (portal['key'] == 'hydrobot') {
-              _navigateToHydroBot(context);
-            } else {
-              setState(() {
-                _selectedPortal = portal['key'];
-                _errorMessage = '';
-                _usernameController.clear();
-                _passwordController.clear();
-              });
-              _showLoginDialog(portal);
-            }
-          },
-          child: Row(
-            children: [
-              const SizedBox(width: 20),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: portal['lightColor'],
-                  shape: BoxShape.circle,
+      ),
+      child: SafeArea(
+        child: Column(
+          children: [
+            const SizedBox(height: 50),
+            // Header
+            ShaderMask(
+              shaderCallback: (bounds) =>
+                  AppDesign.accentGradient.createShader(bounds),
+              child: Text(
+                'NIRAIVIZHI',
+                style: GoogleFonts.poppins(
+                  fontSize: 36,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                  letterSpacing: 3,
                 ),
-                child: Icon(portal['icon'], color: portal['color'], size: 24),
               ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: Text(
-                  portal['label'],
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 18,
-                    color: const Color(0xFF37474F),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'HEALTH SURVEILLANCE PORTAL',
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.white70,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 40),
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(40),
+                    topRight: Radius.circular(40),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 20,
+                      offset: Offset(0, -5),
+                    )
+                  ],
+                ),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.all(30),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Select Your Role',
+                        style: GoogleFonts.poppins(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: AppDesign.primaryNavy,
+                        ),
+                      ),
+                      Text(
+                        'Choose the appropriate portal to login',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 25),
+                      ...portals
+                          .map((portal) => _buildPortalCard(portal))
+                          .toList(),
+                      const SizedBox(height: 20),
+                    ],
                   ),
                 ),
               ),
-              const Padding(
-                padding: EdgeInsets.only(right: 20),
-                child: Icon(Icons.arrow_forward_ios,
-                    color: Color(0xFFB0BEC5), size: 18),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPortalCard(Map<String, dynamic> portal) {
+    bool isSelected = _selectedPortal == portal['key'];
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      margin: const EdgeInsets.symmetric(vertical: 10),
+      child: InkWell(
+        onTap: () {
+          if (portal['key'] == 'hydrobot') {
+            _navigateToHydroBot(context);
+          } else {
+            setState(() {
+              _selectedPortal = portal['key'];
+              _errorMessage = '';
+              _usernameController.clear();
+              _passwordController.clear();
+            });
+            _showLoginDialog(portal);
+          }
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected ? portal['color'] : Colors.grey[100]!,
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: portal['color'].withOpacity(0.1),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+              )
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: portal['color'].withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Icon(portal['icon'], color: portal['color'], size: 30),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      portal['label'],
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: AppDesign.primaryNavy,
+                      ),
+                    ),
+                    Text(
+                      'Access ${portal['label']} features',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios,
+                color: portal['color'].withOpacity(0.5),
+                size: 16,
               ),
             ],
           ),
@@ -884,24 +1117,25 @@ class _UserPortalScreenState extends State<UserPortalScreen> {
   void _showLoginDialog(Map<String, dynamic> portal) {
     showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => Dialog(
-          insetPadding: const EdgeInsets.symmetric(
-              horizontal: 24, vertical: 24),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20)),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: 400,
-              maxHeight: MediaQuery.of(context).size.height * 0.65,
-            ),
-            child: _buildLoginForm(setDialogState, portal),
+      barrierDismissible: true,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(maxWidth: 400),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(30),
+            boxShadow: AppDesign.premiumShadows,
+          ),
+          child: StatefulBuilder(
+            builder: (context, setDialogState) =>
+                _buildLoginForm(setDialogState, portal),
           ),
         ),
       ),
     ).then((_) {
-      // Reset state when dialog is closed
       setState(() {
         _isLoading = false;
         _errorMessage = '';
@@ -909,117 +1143,122 @@ class _UserPortalScreenState extends State<UserPortalScreen> {
     });
   }
 
-  Widget _buildLoginForm(StateSetter setDialogState, Map<String, dynamic> portal) {
+  Widget _buildLoginForm(
+      StateSetter setDialogState, Map<String, dynamic> portal) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(30),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: portal['lightColor'],
-              borderRadius: BorderRadius.circular(12),
+              color: portal['color'].withOpacity(0.1),
+              shape: BoxShape.circle,
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(portal['icon'], color: portal['color'], size: 28),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: Text(
-                    'Login to ${_getPortalName(_selectedPortal)}',
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 18,
-                      color: const Color(0xFF37474F),
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+            child: Icon(portal['icon'], color: portal['color'], size: 40),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            '${portal['label']} Login',
+            style: GoogleFonts.poppins(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: AppDesign.primaryNavy,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Please enter your credentials',
+            style: GoogleFonts.poppins(color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 30),
+          TextField(
+            controller: _usernameController,
+            decoration: InputDecoration(
+              hintText: 'Email or Username',
+              prefixIcon: Icon(Icons.email_outlined, color: portal['color']),
+              filled: true,
+              fillColor: Colors.grey[50],
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(15),
+                borderSide: BorderSide.none,
+              ),
             ),
           ),
           const SizedBox(height: 20),
           TextField(
-            controller: _usernameController,
-            decoration: InputDecoration(
-              labelText: 'Email',
-              prefixIcon: const Icon(Icons.person),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
             controller: _passwordController,
             obscureText: true,
             decoration: InputDecoration(
-              labelText: 'Password',
-              prefixIcon: const Icon(Icons.lock),
+              hintText: 'Password',
+              prefixIcon: Icon(Icons.lock_outline, color: portal['color']),
+              filled: true,
+              fillColor: Colors.grey[50],
               border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(15),
+                borderSide: BorderSide.none,
+              ),
             ),
           ),
-          if (_errorMessage.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Text(
-              _errorMessage,
-              style: const TextStyle(color: Colors.red),
-              textAlign: TextAlign.center,
+          if (_errorMessage.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 15),
+              child: Text(
+                _errorMessage,
+                style: GoogleFonts.poppins(color: Colors.red, fontSize: 13),
+              ),
             ),
-          ],
-          const SizedBox(height: 24),
+          const SizedBox(height: 30),
           _isLoading
               ? CircularProgressIndicator(color: portal['color'])
-              : SizedBox(
+              : Container(
                   width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: portal['color'],
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
+                  height: 55,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(15),
+                    gradient: LinearGradient(
+                      colors: [
+                        portal['color'],
+                        portal['color'].withOpacity(0.8)
+                      ],
                     ),
-                    onPressed: () => _handleLogin(setDialogState, portal['key']),
+                    boxShadow: [
+                      BoxShadow(
+                        color: portal['color'].withOpacity(0.3),
+                        blurRadius: 10,
+                        offset: const Offset(0, 5),
+                      )
+                    ],
+                  ),
+                  child: ElevatedButton(
+                    onPressed: () =>
+                        _handleLogin(setDialogState, portal['key']),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                    ),
                     child: Text(
-                      "Login",
+                      'LOG IN',
                       style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.w600, fontSize: 16),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        letterSpacing: 1.2,
+                      ),
                     ),
                   ),
                 ),
+          const SizedBox(height: 20),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              setState(() {
-                _selectedPortal = '';
-                _usernameController.clear();
-                _passwordController.clear();
-                _errorMessage = '';
-              });
-            },
-            child: const Text("Back to Portal Selection"),
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(color: Colors.grey[600]),
+            ),
           ),
         ],
       ),
     );
-  }
-
-  String _getPortalName(String portalKey) {
-    switch (portalKey) {
-      case 'asha_worker':
-        return 'ASHA Worker';
-      case 'village_leader':
-        return 'Village Leader';
-      case 'health_official':
-        return 'Health Official';
-      case 'community_member':
-        return 'Community Member';
-      default:
-        return '';
-    }
   }
 
   void _handleLogin(StateSetter setDialogState, String portalKey) async {
@@ -1077,27 +1316,31 @@ class _UserPortalScreenState extends State<UserPortalScreen> {
   void _navigateToDashboard(String portalKey) {
     switch (portalKey) {
       case 'asha_worker':
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => ASHAWorkerDashboard()));
+        Navigator.pushReplacement(
+            context, MaterialPageRoute(builder: (_) => ASHAWorkerDashboard()));
         break;
       case 'village_leader':
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => VillageLeaderDashboard()));
+        Navigator.pushReplacement(context,
+            MaterialPageRoute(builder: (_) => VillageLeaderDashboard()));
         break;
       case 'health_official':
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => HealthOfficialDashboard()));
+        Navigator.pushReplacement(context,
+            MaterialPageRoute(builder: (_) => HealthOfficialDashboard()));
         break;
       case 'community_member':
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => CommunityMemberDashboard()));
+        Navigator.pushReplacement(context,
+            MaterialPageRoute(builder: (_) => CommunityMemberDashboard()));
         break;
     }
   }
 
   void _navigateToHydroBot(BuildContext context) {
-  Navigator.of(context).pushReplacement(
-    MaterialPageRoute(
-      builder: (context) => OptimusXAppWrapper(),
-    ),
-  );
-}
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => OptimusXAppWrapper(),
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -1106,6 +1349,7 @@ class _UserPortalScreenState extends State<UserPortalScreen> {
     super.dispose();
   }
 }
+
 class OptimusXAppWrapper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -1135,7 +1379,7 @@ class _ASHAWorkerDashboardState extends State<ASHAWorkerDashboard> {
   final PageController _pageController = PageController();
   final uid = FirebaseAuth.instance.currentUser?.uid;
 
-    Map<String, dynamic>? userData;
+  Map<String, dynamic>? userData;
   bool isLoading = true;
 
   @override
@@ -1143,66 +1387,124 @@ class _ASHAWorkerDashboardState extends State<ASHAWorkerDashboard> {
     super.initState();
     fetchUserData(); // Fetch all fields once
   }
+
 // Add these variables at the top of your class
-final DatabaseReference _sensorRef = FirebaseDatabase.instance.ref('sensor');
-static const double tdsThreshold = 1000.0;
-static const double turbidityThreshold = 50.0;
-double tdsValue = 0.0;
-double turbidity = 0.0;
+  final DatabaseReference _sensorRef = FirebaseDatabase.instance.ref('sensor');
+  static const double tdsThreshold = 1000.0;
+  static const double turbidityThreshold = 50.0;
+  double tdsValue = 0.0;
+  double turbidity = 0.0;
 
-Future<void> fetchUserData() async {
-  try {
-    print('🔄 Starting fetchUserData for UID: $uid');
-    
-    DocumentSnapshot doc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .get();
+  Future<void> fetchUserData() async {
+    try {
+      print('🔄 Starting fetchUserData for UID: $uid');
 
-    if (doc.exists) {
+      DocumentSnapshot doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+
+      if (doc.exists) {
+        setState(() {
+          userData = doc.data() as Map<String, dynamic>?;
+          isLoading = false;
+        });
+        print('✅ User data fetched successfully');
+
+        // After fetching user data, also check sensor data and send alerts if needed
+      } else {
+        print('❌ User document does not exist');
+        setState(() {
+          userData = {'error': 'User not found'};
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('❌ Firestore fetch error: $e');
       setState(() {
-        userData = doc.data() as Map<String, dynamic>?;
-        isLoading = false;
-      });
-      print('✅ User data fetched successfully');
-      
-      // After fetching user data, also check sensor data and send alerts if needed
-    } else {
-      print('❌ User document does not exist');
-      setState(() {
-        userData = {'error': 'User not found'};
+        userData = {'error': 'Failed to fetch data: $e'};
         isLoading = false;
       });
     }
-
-  } catch (e) {
-    print('❌ Firestore fetch error: $e');
-    setState(() {
-      userData = {'error': 'Failed to fetch data: $e'};
-      isLoading = false;
-    });
   }
-}
-
 
   // Mock data for ASHA Worker
   final List<Map<String, dynamic>> _myPatients = [
-    {'name': 'Rahul Sharma', 'age': 32, 'village': 'Gandhi Nagar', 'lastVisit': '2 days ago', 'status': 'Needs Follow-up', 'symptoms': 'Fever, Diarrhea'},
-    {'name': 'Sunita Devi', 'age': 28, 'village': 'Nehru Colony', 'lastVisit': '1 week ago', 'status': 'Stable', 'symptoms': 'Cough, Cold'},
-    {'name': 'Amit Kumar', 'age': 45, 'village': 'Gandhi Nagar', 'lastVisit': '3 days ago', 'status': 'Recovering', 'symptoms': 'Stomach Pain'},
-    {'name': 'Priya Singh', 'age': 22, 'village': 'Tagore Enclave', 'lastVisit': 'Today', 'status': 'New Case', 'symptoms': 'Fever, Headache'},
+    {
+      'name': 'Rahul Sharma',
+      'age': 32,
+      'village': 'Gandhi Nagar',
+      'lastVisit': '2 days ago',
+      'status': 'Needs Follow-up',
+      'symptoms': 'Fever, Diarrhea'
+    },
+    {
+      'name': 'Sunita Devi',
+      'age': 28,
+      'village': 'Nehru Colony',
+      'lastVisit': '1 week ago',
+      'status': 'Stable',
+      'symptoms': 'Cough, Cold'
+    },
+    {
+      'name': 'Amit Kumar',
+      'age': 45,
+      'village': 'Gandhi Nagar',
+      'lastVisit': '3 days ago',
+      'status': 'Recovering',
+      'symptoms': 'Stomach Pain'
+    },
+    {
+      'name': 'Priya Singh',
+      'age': 22,
+      'village': 'Tagore Enclave',
+      'lastVisit': 'Today',
+      'status': 'New Case',
+      'symptoms': 'Fever, Headache'
+    },
   ];
 
   final List<Map<String, dynamic>> _recentVisits = [
-    {'date': 'Today', 'visits': 8, 'symptoms': ['Fever', 'Diarrhea']},
-    {'date': 'Yesterday', 'visits': 12, 'symptoms': ['Vomiting', 'Dehydration']},
-    {'date': '2 days ago', 'visits': 6, 'symptoms': ['Stomach Pain', 'Fever']},
+    {
+      'date': 'Today',
+      'visits': 8,
+      'symptoms': ['Fever', 'Diarrhea']
+    },
+    {
+      'date': 'Yesterday',
+      'visits': 12,
+      'symptoms': ['Vomiting', 'Dehydration']
+    },
+    {
+      'date': '2 days ago',
+      'visits': 6,
+      'symptoms': ['Stomach Pain', 'Fever']
+    },
   ];
 
   final List<Map<String, dynamic>> _waterTests = [
-    {'source': 'Village Well', 'date': 'Today', 'status': 'Moderate Risk', 'bacteria': 15, 'ph': 6.8, 'turbidity': 25},
-    {'source': 'River Point', 'date': 'Yesterday', 'status': 'High Risk', 'bacteria': 45, 'ph': 5.2, 'turbidity': 65},
-    {'source': 'Hand Pump', 'date': '3 days ago', 'status': 'Low Risk', 'bacteria': 5, 'ph': 7.2, 'turbidity': 8},
+    {
+      'source': 'Village Well',
+      'date': 'Today',
+      'status': 'Moderate Risk',
+      'bacteria': 15,
+      'ph': 6.8,
+      'turbidity': 25
+    },
+    {
+      'source': 'River Point',
+      'date': 'Yesterday',
+      'status': 'High Risk',
+      'bacteria': 45,
+      'ph': 5.2,
+      'turbidity': 65
+    },
+    {
+      'source': 'Hand Pump',
+      'date': '3 days ago',
+      'status': 'Low Risk',
+      'bacteria': 5,
+      'ph': 7.2,
+      'turbidity': 8
+    },
   ];
 
   // For connecting to sensors
@@ -1211,7 +1513,6 @@ Future<void> fetchUserData() async {
   double _currentPH = 7.0;
   double _currentTurbidity = 10.0;
   int _currentBacteria = 0;
-  
 
   void _goBackToPortal() {
     Navigator.of(context).pushReplacement(
@@ -1224,16 +1525,16 @@ Future<void> fetchUserData() async {
     setState(() {
       _isWaterSensorConnected = true;
     });
-    
+
     // Simulate sensor data reading (replace with actual sensor API call)
     await Future.delayed(const Duration(seconds: 2));
-    
+
     setState(() {
-      _currentPH = 6.8 + math.Random().nextDouble() * 1.0;
-      _currentTurbidity = 5.0 + math.Random().nextDouble() * 40.0;
-      _currentBacteria = math.Random().nextInt(50);
+      _currentPH = 6.8 + Random().nextDouble() * 1.0;
+      _currentTurbidity = 5.0 + Random().nextDouble() * 40.0;
+      _currentBacteria = Random().nextInt(50);
     });
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Water sensor connected successfully')),
     );
@@ -1244,10 +1545,10 @@ Future<void> fetchUserData() async {
     setState(() {
       _isHealthSensorConnected = true;
     });
-    
+
     // Simulate health sensor data (replace with actual API)
     await Future.delayed(const Duration(seconds: 2));
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Health monitoring sensor connected')),
     );
@@ -1255,52 +1556,14 @@ Future<void> fetchUserData() async {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: _goBackToPortal,
-        ),
-        title: Text(
-          'ASHA Worker Portal',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: const Color(0xFF4CAF50),
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications),
-            onPressed: () {
-              _showASHAAlertsDialog();
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.person),
-            onPressed: () {
-              _showProfileDialog();
-            },
-          ),
-        ],
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFE8F5E9),
-              Color(0xFFC8E6C9),
-              Color(0xFFA5D6A7),
-            ],
-          ),
-        ),
-        child: PageView(
+    return ResponsiveLayout(
+      mobile: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: _buildASHAAppBar(),
+        drawer: _buildASHADrawer(),
+        body: PageView(
           controller: _pageController,
-          onPageChanged: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-          },
+          onPageChanged: (index) => setState(() => _currentIndex = index),
           children: [
             _buildASHADashboard(),
             _buildPatientsTab(),
@@ -1308,234 +1571,931 @@ Future<void> fetchUserData() async {
             _buildReportsTab(),
           ],
         ),
+        bottomNavigationBar: _buildASHABottomNav(),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => _showASHAQuickActions(),
+          backgroundColor: AppDesign.electricBlue,
+          elevation: 8,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          child: const Icon(Icons.add_rounded, color: Colors.white, size: 30),
+        ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-            _pageController.jumpToPage(index);
-          });
-        },
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFF4CAF50),
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people),
-            label: 'Patients',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.water_drop),
-            label: 'Water Tests',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.assignment),
-            label: 'Reports',
+      tablet: Scaffold(
+        backgroundColor: Colors.white,
+        body: Row(
+          children: [
+            _buildASHANavRail(extended: false),
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _buildASHADashboard(),
+                  _buildPatientsTab(),
+                  _buildWaterTestingTab(),
+                  _buildReportsTab(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      web: Scaffold(
+        backgroundColor: Colors.white,
+        body: Row(
+          children: [
+            _buildASHANavRail(extended: true),
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _buildASHADashboard(),
+                  _buildPatientsTab(),
+                  _buildWaterTestingTab(),
+                  _buildReportsTab(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildASHAAppBar() {
+    return AppBar(
+      elevation: 0,
+      backgroundColor: Colors.white,
+      leading: Builder(
+        builder: (context) => IconButton(
+          icon: const Icon(Icons.menu_rounded, color: AppDesign.primaryNavy),
+          onPressed: () => Scaffold.of(context).openDrawer(),
+        ),
+      ),
+      title: Text(
+        'AQUAGUARD ASHA',
+        style: GoogleFonts.poppins(
+          color: AppDesign.primaryNavy,
+          fontWeight: FontWeight.bold,
+          fontSize: 18,
+          letterSpacing: 1.2,
+        ),
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.notifications_none_rounded,
+              color: AppDesign.primaryNavy),
+          onPressed: () => _showASHAAlertsDialog(),
+        ),
+        const SizedBox(width: 8),
+      ],
+    );
+  }
+
+  Widget _buildASHABottomNav() {
+    return Container(
+      decoration: BoxDecoration(
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, -5),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          _showASHAQuickActions();
+      child: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() => _currentIndex = index);
+          _pageController.animateToPage(
+            index,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
         },
-        backgroundColor: const Color(0xFF4CAF50),
-        child: const Icon(Icons.add, color: Colors.white),
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: Colors.white,
+        selectedItemColor: AppDesign.electricBlue,
+        unselectedItemColor: Colors.grey[400],
+        showSelectedLabels: true,
+        showUnselectedLabels: true,
+        selectedLabelStyle:
+            GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 10),
+        unselectedLabelStyle: GoogleFonts.poppins(fontSize: 10),
+        items: const [
+          BottomNavigationBarItem(
+              icon: Icon(Icons.dashboard_rounded), label: 'Home'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.people_alt_rounded), label: 'Patients'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.water_drop_rounded), label: 'Water'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.description_rounded), label: 'Reports'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildASHADrawer() {
+    return Drawer(
+      child: Column(
+        children: [
+          _buildASHAPremiumDrawerHeader(),
+          ListTile(
+            leading: const Icon(Icons.person_outline_rounded),
+            title: Text('My Profile', style: GoogleFonts.poppins()),
+            onTap: () {
+              Navigator.pop(context);
+              _showProfileDialog();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.settings_outlined),
+            title: Text('Settings', style: GoogleFonts.poppins()),
+            onTap: () => Navigator.pop(context),
+          ),
+          const Spacer(),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout_rounded, color: Colors.red),
+            title:
+                Text('Logout', style: GoogleFonts.poppins(color: Colors.red)),
+            onTap: _goBackToPortal,
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildASHAPremiumDrawerHeader() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 60, 24, 30),
+      decoration: const BoxDecoration(
+        gradient: AppDesign.primaryGradient,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const CircleAvatar(
+            radius: 35,
+            backgroundColor: Colors.white24,
+            child: Icon(Icons.health_and_safety_rounded,
+                color: Colors.white, size: 40),
+          ),
+          const SizedBox(height: 15),
+          Text(
+            'ASHA Worker',
+            style: GoogleFonts.poppins(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Text(
+            userData?['village'] ?? 'Community Service',
+            style: GoogleFonts.poppins(
+              color: Colors.white70,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildASHANavRail({required bool extended}) {
+    return NavigationRail(
+      extended: extended,
+      minWidth: 80,
+      backgroundColor: Colors.white,
+      unselectedIconTheme: IconThemeData(color: Colors.grey[400]),
+      selectedIconTheme: const IconThemeData(color: AppDesign.electricBlue),
+      selectedLabelTextStyle: GoogleFonts.poppins(
+        color: AppDesign.electricBlue,
+        fontWeight: FontWeight.bold,
+      ),
+      unselectedLabelTextStyle: GoogleFonts.poppins(color: Colors.grey[600]),
+      destinations: const [
+        NavigationRailDestination(
+            icon: Icon(Icons.dashboard_rounded), label: Text('Home')),
+        NavigationRailDestination(
+            icon: Icon(Icons.people_alt_rounded), label: Text('Patients')),
+        NavigationRailDestination(
+            icon: Icon(Icons.water_drop_rounded), label: Text('Water')),
+        NavigationRailDestination(
+            icon: Icon(Icons.description_rounded), label: Text('Reports')),
+      ],
+      selectedIndex: _currentIndex,
+      onDestinationSelected: (index) {
+        setState(() => _currentIndex = index);
+        _pageController.animateToPage(index,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut);
+      },
+      leading: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: extended
+            ? Text('AQUAGUARD',
+                style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold, color: AppDesign.electricBlue))
+            : const Icon(Icons.water_drop, color: AppDesign.electricBlue),
+      ),
+      trailing: Expanded(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.logout_rounded),
+              onPressed: _goBackToPortal,
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildASHADashboard() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Center(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildASHAPremiumHeader(),
+          const SizedBox(height: 32),
+          _buildASHAStatusCards(),
+          const SizedBox(height: 40),
+          _buildSectionHeader('Prioritized Actions', Icons.bolt_rounded),
+          const SizedBox(height: 16),
+          _buildASHASectorGrid(),
+          const SizedBox(height: 40),
+          _buildSectionHeader('Recent Surveillance', Icons.history_rounded),
+          const SizedBox(height: 16),
+          _buildRecentVisits(),
+          const SizedBox(height: 100),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildASHAPremiumHeader() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: AppDesign.glassDecoration(),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Community Health Overview',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                Text(
+                  userData?['village'] ?? 'Local Village',
+                  style: GoogleFonts.poppins(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: AppDesign.primaryNavy,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppDesign.electricBlue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: const Icon(Icons.location_on_rounded,
+                color: AppDesign.electricBlue),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildASHASectorGrid() {
+    return GridView.count(
+      crossAxisCount: ResponsiveLayout.isMobile(context) ? 2 : 4,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 16,
+      crossAxisSpacing: 16,
+      childAspectRatio: 1.1,
+      children: [
+        _buildASHACard('New Patient', Icons.person_add_rounded,
+            AppDesign.primaryNavy, () {}),
+        _buildASHACard(
+            'Water Test', Icons.science_rounded, AppDesign.electricBlue, () {}),
+        _buildASHACard(
+            'Health Log', Icons.edit_note_rounded, AppDesign.aquaCyan, () {}),
+        _buildASHACard(
+            'Sync Data', Icons.sync_rounded, AppDesign.deepTeal, () {}),
+      ],
+    );
+  }
+
+  Widget _buildASHACard(
+      String title, IconData icon, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.grey[100]!),
+        ),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(height: 12),
             Text(
-              'Community Health Overview',
+              title,
+              textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
-                fontSize: 22,
+                fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: const Color(0xFF2E7D32),
+                color: AppDesign.primaryNavy,
               ),
             ),
-            const SizedBox(height: 16),
-            _buildASHAStatusCards(),
-            const SizedBox(height: 24),
-            Text(
-              'Recent Patient Visits',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF2E7D32),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildRecentVisits(),
-            const SizedBox(height: 24),
-            Text(
-              'Water Test Results',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF2E7D32),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildWaterTestResults(),
-            const SizedBox(height: 24),
-            Text(
-              'Quick Actions',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF2E7D32),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildASHAQuickActions(),
           ],
         ),
       ),
     );
   }
 
- Widget _buildASHAStatusCards() {
-  Future<Map<String, dynamic>?> fetchUserData() async {
-    final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-    return doc.data();
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: AppDesign.electricBlue, size: 22),
+        const SizedBox(width: 10),
+        Text(
+          title,
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppDesign.primaryNavy,
+          ),
+        ),
+        const Spacer(),
+        TextButton(
+          onPressed: () {},
+          child: Text('View All',
+              style: GoogleFonts.poppins(
+                  color: AppDesign.electricBlue, fontWeight: FontWeight.bold)),
+        ),
+      ],
+    );
   }
 
-  return FutureBuilder<Map<String, dynamic>?>(
-    future: fetchUserData(),
-    builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting) {
-        return const Center(child: CircularProgressIndicator());
-      } else if (snapshot.hasError) {
-        return Center(child: Text('Error: ${snapshot.error}'));
-      } else if (!snapshot.hasData || snapshot.data == null) {
-        return const Center(child: Text('No data found'));
-      }
+  Widget _buildASHAStatusCards() {
+    final patients =
+        List<Map<String, dynamic>>.from(userData?['patients'] ?? []);
+    final waterTests =
+        List<Map<String, dynamic>>.from(userData?['water_test'] ?? []);
+    final todaysVisits = patients.where((p) {
+      if (p['lastVisit'] == null) return false;
+      final date = (p['lastVisit'] as Timestamp).toDate();
+      final now = DateTime.now();
+      return date.year == now.year &&
+          date.month == now.month &&
+          date.day == now.day;
+    }).toList();
 
-      final data = snapshot.data!;
-      final patients = data['patients'] ?? [];
-      final waterTests = data['water_test'] ?? [];
-        DateTime now = DateTime.now();
+    return Row(
+      children: [
+        Expanded(
+            child: _buildASHAStatCard('Registry', '${patients.length}',
+                Icons.people_rounded, AppDesign.primaryNavy)),
+        const SizedBox(width: 12),
+        Expanded(
+            child: _buildASHAStatCard('Today', '${todaysVisits.length}',
+                Icons.medical_services_rounded, AppDesign.electricBlue)),
+        const SizedBox(width: 12),
+        Expanded(
+            child: _buildASHAStatCard('Tests', '${waterTests.length}',
+                Icons.water_drop_rounded, AppDesign.aquaCyan)),
+      ],
+    );
+  }
 
-      List<Map<String, dynamic>> todaysVisitors = [];
+  Widget _buildASHAStatCard(
+      String title, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey[100]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(height: 12),
+          Text(value,
+              style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: AppDesign.primaryNavy)),
+          Text(title,
+              style: GoogleFonts.poppins(
+                  fontSize: 10,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
 
-          for (var patient in patients) {
-      if (patient['lastVisit'] != null) {
-        Timestamp ts = patient['lastVisit'];
-        DateTime visitDate = ts.toDate();
+  Widget _buildRecentVisits() {
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get()
+          .then((doc) => doc.data()),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting)
+          return const Center(child: CircularProgressIndicator());
+        if (!snapshot.hasData || snapshot.data == null)
+          return const Text('No recent data');
 
-        // Compare only year, month, and day
-        bool isToday = visitDate.year == now.year &&
-                       visitDate.month == now.month &&
-                       visitDate.day == now.day;
+        final patients =
+            List<Map<String, dynamic>>.from(snapshot.data!['patients'] ?? []);
+        if (patients.isEmpty) return const Text('No patients recorded');
 
-        if (isToday) {
-          // Add patient info + user reference if needed
-          todaysVisitors.add(
-             patient
-          );
-        }
-      }
-      }
+        // Sort by last visit
+        patients.sort((a, b) {
+          final ta = a['lastVisit'] as Timestamp?;
+          final tb = b['lastVisit'] as Timestamp?;
+          if (ta == null || tb == null) return 0;
+          return tb.compareTo(ta);
+        });
 
-      return Center(
+        final recentOnes = patients.take(3).toList();
+
+        return Column(
+          children: recentOnes.map((p) {
+            final ts = p['lastVisit'] as Timestamp?;
+            final dateStr = ts != null
+                ? "${ts.toDate().day}/${ts.toDate().month}/${ts.toDate().year}"
+                : "N/A";
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: Colors.grey[100]!),
+              ),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  backgroundColor: AppDesign.electricBlue.withOpacity(0.1),
+                  child: const Icon(Icons.person_rounded,
+                      color: AppDesign.electricBlue),
+                ),
+                title: Text(p['name'] ?? 'Unknown',
+                    style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        color: AppDesign.primaryNavy)),
+                subtitle: Text("Last visit: $dateStr",
+                    style: GoogleFonts.poppins(fontSize: 12)),
+                trailing: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppDesign.aquaCyan.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    p['status'] ?? 'Stable',
+                    style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: AppDesign.deepTeal),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildWaterTestResults() {
+    final tests =
+        List<Map<String, dynamic>>.from(userData?['water_test'] ?? []);
+    if (tests.isEmpty)
+      return _buildEmptyState('No records found', Icons.water_drop_outlined);
+
+    return Column(
+      children: tests.take(5).map((test) {
+        final statusColor = test['status'] == 'High Risk'
+            ? Colors.red
+            : (test['status'] == 'Moderate Risk'
+                ? Colors.orange
+                : Colors.green);
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.grey[100]!),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child:
+                    Icon(Icons.opacity_rounded, color: statusColor, size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(test['source'] ?? 'General Source',
+                        style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.bold,
+                            color: AppDesign.primaryNavy)),
+                    Text(test['date'] ?? 'N/A',
+                        style: GoogleFonts.poppins(
+                            fontSize: 12, color: Colors.grey[600])),
+                  ],
+                ),
+              ),
+              Text(
+                '${test['bacteria'] ?? '0'} CFU',
+                style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold, color: statusColor),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  void _showASHAQuickActions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(30),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(30), topRight: Radius.circular(30)),
+        ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Existing status cards row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: _buildStatusCard(
-                    'Patients',
-                    '${patients.length}',
-                    Icons.people,
-                    const Color(0xFF4CAF50),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildStatusCard(
-                    'Today\'s Visits',
-                    '${todaysVisitors.length}',
-                    Icons.medical_services,
-                    const Color(0xFF2196F3),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildStatusCard(
-                    'Water Tests',
-                    '${waterTests.length}',
-                    Icons.water_drop,
-                    const Color(0xFFFF9800),
-                  ),
-                ),
-              ],
-            ),
-            
-            // Today's Visits button
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () {
-                _showTodaysVisitsDialog(todaysVisitors);
-              },
-              icon: const Icon(Icons.today, color: Colors.white),
-              label: const Text(
-                'View Today\'s Visits',
-                style: TextStyle(color: Colors.white),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2196F3),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
+            Text('Quick Actions',
+                style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AppDesign.primaryNavy)),
+            const SizedBox(height: 25),
+            _buildQuickActionItem(Icons.person_add_rounded, 'Add New Patient',
+                'Register a new community member', AppDesign.electricBlue, () {
+              Navigator.pop(context);
+              _showNewPatientDialog();
+            }),
+            _buildQuickActionItem(Icons.medical_information_rounded,
+                'Symptom Report', 'Log patient symptoms', Colors.orange, () {
+              Navigator.pop(context);
+              _showSymptomReportDialog();
+            }),
+            _buildQuickActionItem(
+                Icons.water_drop_rounded,
+                'Water Quality Test',
+                'Start a new water test',
+                AppDesign.aquaCyan, () {
+              Navigator.pop(context);
+              _navigateToHydroBot(context);
+            }),
+            const SizedBox(height: 20),
           ],
         ),
-      );
-    },
-  );
-}
-  Widget _buildStatusCard(String title, String value, IconData icon, Color color) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  Widget _buildQuickActionItem(IconData icon, String title, String subtitle,
+      Color color, VoidCallback onTap) {
+    return ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+      leading: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(15)),
+        child: Icon(icon, color: color),
+      ),
+      title: Text(title,
+          style: GoogleFonts.poppins(
+              fontWeight: FontWeight.bold, color: AppDesign.primaryNavy)),
+      subtitle: Text(subtitle, style: GoogleFonts.poppins(fontSize: 12)),
+      trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+    );
+  }
+
+  void _navigateToHydroBot(BuildContext context) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => OptimusXAppWrapper(),
+      ),
+    );
+  }
+
+  Widget _buildPatientsTab() {
+    final patients =
+        List<Map<String, dynamic>>.from(userData?['patients'] ?? []);
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+              'Community Patient Registry', Icons.people_alt_rounded),
+          const SizedBox(height: 20),
+          if (patients.isEmpty)
+            _buildEmptyState('No patients registered', Icons.person_off_rounded)
+          else
+            ...patients.map((patient) => _buildPatientCard(patient)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPatientCard(Map<String, dynamic> patient) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey[100]!),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(16),
+        onTap: () => _showPatientDetails(patient),
+        leading: CircleAvatar(
+          radius: 25,
+          backgroundColor: AppDesign.electricBlue.withOpacity(0.1),
+          child:
+              const Icon(Icons.person_rounded, color: AppDesign.electricBlue),
+        ),
+        title: Text(
+          patient['name'] ?? 'Unknown',
+          style: GoogleFonts.poppins(
+              fontWeight: FontWeight.bold, color: AppDesign.primaryNavy),
+        ),
+        subtitle: Text(
+          '${patient['age'] ?? '?'} Yrs • ${patient['village'] ?? 'Local'}',
+          style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600]),
+        ),
+        trailing: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: _getStatusColor(patient['status']).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            patient['status'] ?? 'Stable',
+            style: GoogleFonts.poppins(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: _getStatusColor(patient['status']),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(String message, IconData icon) {
+    return Center(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(vertical: 60),
+        child: Column(
+          children: [
+            Icon(icon, size: 60, color: Colors.grey[300]),
+            const SizedBox(height: 16),
+            Text(message, style: GoogleFonts.poppins(color: Colors.grey[500])),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _getStatusColor(String? status) {
+    switch (status) {
+      case 'Needs Follow-up':
+        return Colors.orange;
+      case 'New Case':
+        return AppDesign.electricBlue;
+      case 'High Risk':
+        return Colors.red;
+      default:
+        return Colors.green;
+    }
+  }
+
+  Widget _buildWaterTestingTab() {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader('Smart Diagnostics', Icons.science_rounded),
+          const SizedBox(height: 20),
+          _buildHydroBotModule(),
+          const SizedBox(height: 40),
+          _buildSectionHeader('surveillance Logs', Icons.history_rounded),
+          const SizedBox(height: 16),
+          _buildWaterTestResults(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHydroBotModule() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: AppDesign.primaryGradient,
+        borderRadius: BorderRadius.circular(25),
+        boxShadow: AppDesign.premiumShadows,
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: const Icon(Icons.smart_toy_rounded,
+                    color: Colors.white, size: 30),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('HydroBot Core V2',
+                        style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18)),
+                    Text(
+                        _isWaterSensorConnected
+                            ? 'SECURE CONNECTION ACTIVE'
+                            : 'SYSTEM DISCONNECTED',
+                        style: GoogleFonts.poppins(
+                            color: Colors.white70,
+                            fontSize: 10,
+                            letterSpacing: 1)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 32),
+          if (_isWaterSensorConnected) _buildSensorMetricsGrid(),
+          const SizedBox(height: 32),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _connectToWaterSensor,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: AppDesign.electricBlue,
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18)),
+                elevation: 0,
+              ),
+              child: Text(
+                _isWaterSensorConnected
+                    ? 'RE-CALIBRATE SENSORS'
+                    : 'INITIATE CONNECTION',
+                style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold, letterSpacing: 1.2),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSensorMetricsGrid() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _buildMetricItem(
+            'pH', _currentPH.toStringAsFixed(1), Icons.water_drop_rounded),
+        _buildMetricItem(
+            'Turbidity',
+            '${_currentTurbidity.toStringAsFixed(0)} NTU',
+            Icons.opacity_rounded),
+        _buildMetricItem('Purity', '${(100 - _currentBacteria).clamp(0, 100)}%',
+            Icons.check_circle_rounded),
+      ],
+    );
+  }
+
+  Widget _buildMetricItem(String label, String value, IconData icon) {
+    return Column(
+      children: [
+        Icon(icon, color: Colors.white70, size: 18),
+        const SizedBox(height: 8),
+        Text(value,
+            style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16)),
+        Text(label,
+            style: GoogleFonts.poppins(color: Colors.white60, fontSize: 10)),
+      ],
+    );
+  }
+
+  Widget _buildSensorCard(
+      String parameter, String value, Color color, IconData icon) {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: color, size: 32),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
-              textAlign: TextAlign.center,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 16, color: color),
+                const SizedBox(width: 4),
+                Text(
+                  parameter,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
             const SizedBox(height: 4),
             Text(
               value,
-              style: GoogleFonts.poppins(
-                fontSize: 18,
+              style: TextStyle(
                 fontWeight: FontWeight.bold,
-                color: Colors.black,
+                color: color,
+                fontSize: 14,
               ),
-              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -1543,1134 +2503,349 @@ Future<void> fetchUserData() async {
     );
   }
 
-Widget _buildRecentVisits() {
-  Future<Map<String, dynamic>?> fetchUserData() async {
-    final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-    return doc.data();
-  }
-
-  return FutureBuilder<Map<String, dynamic>?>(
-    future: fetchUserData(),
-    builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting) {
-        return const Center(child: CircularProgressIndicator());
-      } else if (snapshot.hasError) {
-        return Center(child: Text('Error: ${snapshot.error}'));
-      } else if (!snapshot.hasData || snapshot.data == null) {
-        return const Center(child: Text('No data found'));
-      }
-
-      final userData = snapshot.data!;
-      final List<dynamic> patients = userData['patients'] ?? [];
-
-      DateTime now = DateTime.now();
-      DateTime yesterday = now.subtract(const Duration(days: 1));
-      DateTime twoDaysAgo = now.subtract(const Duration(days: 2));
-
-      bool isSameDay(DateTime a, DateTime b) =>
-          a.year == b.year && a.month == b.month && a.day == b.day;
-
-      List<dynamic> filterVisits(DateTime targetDate) {
-        return patients.where((p) {
-          final ts = p['lastVisit'];
-          if (ts == null) return false;
-          return isSameDay((ts as Timestamp).toDate(), targetDate);
-        }).toList();
-      }
-
-      List<String> extractNames(List<dynamic> visits) {
-        return visits.map((p) => p['name']?.toString() ?? 'Unnamed').toList();
-      }
-
-      final todayVisits = filterVisits(now);
-      final yesterdayVisits = filterVisits(yesterday);
-      final twoDaysAgoVisits = filterVisits(twoDaysAgo);
-
-      final todayNames = extractNames(todayVisits);
-      final yesterdayNames = extractNames(yesterdayVisits);
-      final twoDaysAgoNames = extractNames(twoDaysAgoVisits);
-
-      Widget buildVisitSection(String label, List<String> names, Color iconColor) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: GoogleFonts.poppins(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            names.isEmpty
-                ? Text('No visitors', style: GoogleFonts.poppins(color: Colors.grey))
-                : ListTile(
-                    leading: Icon(Icons.medical_services, color: iconColor),
-                    title: Text(
-                      '${names.length} visited',
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(
-                      'Names: ${names.join(', ')}',
-                      style: GoogleFonts.poppins(),
-                    ),
-                  ),
-            const SizedBox(height: 12),
-          ],
-        );
-      }
-
-      return Center(
-        child: Card(
-          elevation: 4,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '🗓️ Recent Patient Visits',
-                    style: GoogleFonts.poppins(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  buildVisitSection('Today', todayNames, const Color(0xFF2196F3)),
-                  buildVisitSection('Yesterday', yesterdayNames, const Color(0xFF4CAF50)),
-                  buildVisitSection('2 Days Ago', twoDaysAgoNames, const Color(0xFF9C27B0)),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    },
-  );
-}
-
-
-Widget _buildWaterTestResults() {
-  return Center(
-    child: Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            for (var test in userData?['water_test'] ?? []) // Fixed: Added null check
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: ListTile(
-                  leading: const Icon(Icons.water_drop, color: Color(0xFF2196F3)),
-                  title: Text(
-                    test['source'],
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Text(
-                    '${test['date']} - ${test['status']}',
-                    style: GoogleFonts.poppins(),
-                  ),
-                  trailing: Chip(
-                    label: Text(
-                      '${test['bacteria']} CFU',
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                    backgroundColor: test['status'] == 'High Risk'
-                        ? Colors.red
-                        : test['status'] == 'Moderate Risk'
-                        ? Colors.orange
-                        : Colors.green,
-                  ),
-                ),
-              ),
-          ],
-        ),
+  void _downloadWaterTestReport() async {
+    // This would generate and download a PDF report in a real app
+    // For now, show a success message
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Water test report downloaded as PDF'),
+        duration: Duration(seconds: 2),
       ),
-    ),
-  );
-}
-
-Widget _buildASHAQuickActions() {
-  return Center(
-    child: Column(
-      children: [
-        // Add Today's Visit button above the other action buttons
-        Container(
-          width: double.infinity,
-          margin: const EdgeInsets.only(bottom: 16),
-          child: ElevatedButton.icon(
-            onPressed: () {
-              _addTodaysVisit();
-            },
-            icon: const Icon(Icons.today, color: Colors.white),
-            label: const Text(
-              "Today's Visit",
-              style: TextStyle(color: Colors.white),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2196F3),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-        ),
-        
-        // Existing action buttons row
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _buildActionButton(Icons.person_add, 'New Patient', () {
-              _showNewPatientDialog();
-            }, const Color(0xFF4CAF50)),
-            _buildActionButton(Icons.medical_services, 'Symptom Report', () {
-              _showSymptomReportDialog();
-            }, const Color(0xFF2196F3)),
-            _buildActionButton(Icons.water_drop, 'Water Test', () {
-              _navigateToHydroBot(context);
-            }, const Color(0xFFFF9800)),
-          ],
-        ),
-      ],
-    ),
-  );
-}
-
-
-void _navigateToHydroBot(BuildContext context) {
-  Navigator.of(context).pushReplacement(
-    MaterialPageRoute(
-      builder: (context) => OptimusXAppWrapper(),
-    ),
-  );
-}
-
-// Add this method to handle today's visit functionality
-void _addTodaysVisit() {
-  final _formKey = GlobalKey<FormState>();
-  String selectedPatient = '';
-  String symptoms = '';
-  String notes = '';
-
-  showDialog(
-    context: context,
-    builder: (context) {
-      return AlertDialog(
-        title: const Text("Record Today's Visit"),
-        content: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'Select Patient'),
-                  items: userData?['patients'].map<DropdownMenuItem<String>>((patient) {
-                    return DropdownMenuItem<String>(
-                      value: patient['name'],
-                      child: Text(patient['name']),
-                    );
-                  }).toList(),
-                  validator: (value) => value == null ? 'Please select a patient' : null,
-                  onChanged: (value) => selectedPatient = value!,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  decoration: const InputDecoration(labelText: 'Symptoms Observed'),
-                  maxLines: 2,
-                  onChanged: (value) => symptoms = value,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  decoration: const InputDecoration(labelText: 'Notes'),
-                  maxLines: 2,
-                  onChanged: (value) => notes = value,
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (_formKey.currentState!.validate()) {
-                // Update the patient's last visit to today
-                setState(() {
-                  for (var patient in userData!['patients']) {
-                    if (patient['name'] == selectedPatient) {
-                      patient['lastVisit'] = Timestamp.now();
-                      // Add symptoms if provided
-                      if (symptoms.isNotEmpty) {
-                        if (patient['symptoms'] is String) {
-                          patient['symptoms'] = [patient['symptoms'], symptoms];
-                        } else if (patient['symptoms'] is List) {
-                          patient['symptoms'].add(symptoms);
-                        } else {
-                          patient['symptoms'] = [symptoms];
-                        }
-                      }
-                      break;
-                    }
-                  }
-                });
-                
-                // Update in Firebase
-                FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(uid)
-                  .update({'patients': userData?['patients']});
-                
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Visit recorded successfully')),
-                );
-              }
-            },
-            child: const Text('Save Visit'),
-          ),
-        ],
-      );
-    },
-  );
-}
-
-// ... (rest of the code remains the same)
-  Widget _buildActionButton(IconData icon, String label, VoidCallback onPressed, Color color) {
-    return Column(
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: IconButton(
-            icon: Icon(icon, color: Colors.white),
-            onPressed: onPressed,
-          ),
-        ),
-        const SizedBox(height: 6),
-        SizedBox(
-          width: 90,
-          child: Text(
-            label,
-            style: GoogleFonts.poppins(fontSize: 12),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      ],
     );
-  }
 
-Widget _buildPatientsTab() {
-  final patients = userData?['patients'] ?? [];
-  return SingleChildScrollView(
-    padding: const EdgeInsets.all(16),
-    child: Center(
-      child: Column(
-        children: [
-          Text(
-            'My Patients',
-            style: GoogleFonts.poppins(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: const Color(0xFF2E7D32),
-            ),
-          ),
-          const SizedBox(height: 16),
-          ...patients.map((patient) => Card(
-            elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            margin: const EdgeInsets.only(bottom: 16),
-            child: ListTile(
-              leading: const CircleAvatar(
-                backgroundColor: Color(0xFF4CAF50),
-                child: Icon(Icons.person, color: Colors.white),
-              ),
-              title: Text(
-                patient['name'] ?? 'Unknown Name',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Text(
-                '${patient['age'] ?? 'Unknown'} years • ${patient['village'] ?? 'Unknown Village'}',
-                style: GoogleFonts.poppins(),
-              ),
-              trailing: Chip(
-                label: Text(
-                  patient['status'] ?? 'Unknown Status',
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                ),
-                backgroundColor: (patient['status'] == 'Needs Follow-up'
-                    ? Colors.orange
-                    : patient['status'] == 'New Case'
-                    ? Colors.blue
-                    : Colors.green),
-              ),
-              onTap: () {
-                _showPatientDetails(patient);
-              },
-            ),
-          )).toList(),
-          if (patients.isEmpty)
-            const Text('No patients available'),
-        ],
-      ),
-    ),
-  );
-}
-  Widget _buildWaterTestingTab() {
-  return SingleChildScrollView(
-    padding: const EdgeInsets.all(16),
-    child: Center(
-      child: Column(
-        children: [
-          Text(
-            'Water Quality Testing',
-            style: GoogleFonts.poppins(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: const Color(0xFF2E7D32),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  const Icon(Icons.water_drop, size: 50, color: Color(0xFF2196F3)),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Test Water Quality',
-                    style: GoogleFonts.poppins(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Use HydroBot to check water sources for contamination',
-                    style: GoogleFonts.poppins(),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // HydroBot connection status - RESPONSIVE VERSION
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      // For smaller screens, stack vertically
-                      if (constraints.maxWidth < 600) {
-                        return Column(
-                          children: [
-                            Column(
-                              children: [
-                                Icon(
-                                  _isWaterSensorConnected ? Icons.sensors : Icons.sensors_off,
-                                  color: _isWaterSensorConnected ? Colors.green : Colors.red,
-                                  size: 30,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  _isWaterSensorConnected ? 'HydroBot Connected' : 'HydroBot Offline',
-                                  style: TextStyle(
-                                    color: _isWaterSensorConnected ? Colors.green : Colors.red,
-                                    fontSize: 12,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: _connectToWaterSensor,
-                                icon: const Icon(Icons.connect_without_contact, size: 18),
-                                label: Text(_isWaterSensorConnected ? 'Reconnect HydroBot' : 'Connect HydroBot'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF4CAF50),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      } 
-                      // For larger screens, use row layout
-                      else {
-                        return Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            Column(
-                              children: [
-                                Icon(
-                                  _isWaterSensorConnected ? Icons.sensors : Icons.sensors_off,
-                                  color: _isWaterSensorConnected ? Colors.green : Colors.red,
-                                  size: 30,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  _isWaterSensorConnected ? 'HydroBot Connected' : 'HydroBot Offline',
-                                  style: TextStyle(
-                                    color: _isWaterSensorConnected ? Colors.green : Colors.red,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            ElevatedButton.icon(
-                              onPressed: _connectToWaterSensor,
-                              icon: const Icon(Icons.connect_without_contact),
-                              label: Text(_isWaterSensorConnected ? 'Reconnect HydroBot' : 'Connect HydroBot'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF4CAF50),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              ),
-                            ),
-                          ],
-                        );
-                      }
-                    },
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Display current HydroBot sensor readings if connected
-                  if (_isWaterSensorConnected) ...[
-                    const Divider(),
-                    const Text(
-                      'HydroBot Current Sensor Readings:',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                    const SizedBox(height: 10),
-                    
-                    // Sensor readings in a responsive grid
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final crossAxisCount = constraints.maxWidth < 600 ? 2 : 4;
-                        return GridView.count(
-                          crossAxisCount: crossAxisCount,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          childAspectRatio: 1.2,
-                          mainAxisSpacing: 10,
-                          crossAxisSpacing: 10,
-                          children: [
-                            _buildSensorCard('pH', '${_currentPH.toStringAsFixed(1)}', 
-                                _currentPH < 6.5 || _currentPH > 8.5 ? Colors.red : Colors.green,
-                                Icons.science),
-                            _buildSensorCard('Turbidity', '${_currentTurbidity.toStringAsFixed(0)} NTU', 
-                                _currentTurbidity > 40 ? Colors.orange : Colors.green,
-                                Icons.opacity),
-                            _buildSensorCard('Bacteria', '$_currentBacteria CFU', 
-                                _currentBacteria > 20 ? Colors.red : Colors.green,
-                                Icons.biotech),
-                            _buildSensorCard('TDS', '${(_currentTurbidity * 2.5).toStringAsFixed(0)} ppm', 
-                                (_currentTurbidity * 2.5) > 500 ? Colors.orange : Colors.green,
-                                Icons.water),
-                          ],
-                        );
-                      },
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    
-                    // Download PDF button
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          _downloadWaterTestReport();
-                        },
-                        icon: const Icon(Icons.download),
-                        label: const Text('Download PDF Report'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2196F3),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        _showWaterTestForm();
-                      },
-                      icon: const Icon(Icons.science),
-                      label: const Text('Record Water Test'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4CAF50),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Recent Water Tests',
-            style: GoogleFonts.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: const Color(0xFF2E7D32),
-            ),
-          ),
-          const SizedBox(height: 16),
-...(userData?['water_test'] ?? []).map((test) => Card(
-  elevation: 4,
-  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-  margin: const EdgeInsets.only(bottom: 16),
-  child: ListTile(
-    leading: const Icon(Icons.water_drop, color: Color(0xFF2196F3)),
-    title: Text(
-      test['source'] ?? 'Unknown Source',
-      style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-    ),
-    subtitle: Text(
-      'Tested on ${test['date'] ?? 'Unknown Date'}',
-      style: GoogleFonts.poppins(),
-    ),
-    trailing: Chip(
-      label: Text(
-        test['status'] ?? 'Unknown Status',
-        style: const TextStyle(color: Colors.white, fontSize: 12),
-      ),
-      backgroundColor: (test['status'] == 'High Risk'
-          ? Colors.red
-          : test['status'] == 'Moderate Risk'
-          ? Colors.orange
-          : Colors.green),
-    ),
-  ),
-)).toList(),
-if ((userData?['water_test'] ?? []).isEmpty)
-  const Text('No water tests available'),
-
-        ],
-      ),
-    ),
-  );
-}
-Widget _buildSensorCard(String parameter, String value, Color color, IconData icon) {
-  return Card(
-    elevation: 3,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 16, color: color),
-              const SizedBox(width: 4),
-              Text(
-                parameter,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: color,
-              fontSize: 14,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-void _showTodaysVisitsDialog(List<Map<String, dynamic>> todaysVisits) {
-  // Filter patients with visits today
-  showDialog(
-    context: context,
-    builder: (context) {
-      return AlertDialog(
-        title: const Text("Today's Patient Visits"),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: todaysVisits.isEmpty
-              ? const Text('No visits recorded for today')
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: todaysVisits.length,
-                  itemBuilder: (context, index) {
-                    final patient = todaysVisits[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: Color(0xFF2196F3),
-                          child: Icon(Icons.person, color: Colors.white, size: 20),
-                        ),
-                        title: Text(patient['name']),
-                        subtitle: Text(
-                          '${patient['age']} years • ${patient['village']}',
-                        ),
-                        trailing: Chip(
-                          label: Text(
-                            patient['status'],
-                            style: const TextStyle(color: Colors.white, fontSize: 10),
-                          ),
-                          backgroundColor: patient['status'] == 'Needs Follow-up'
-                              ? Colors.orange
-                              : patient['status'] == 'New Case'
-                                  ? Colors.blue
-                                  : Colors.green,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      );
-    },
-  );
-    }
-
-void _downloadWaterTestReport() async {
-  // This would generate and download a PDF report in a real app
-  // For now, show a success message
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text('Water test report downloaded as PDF'),
-      duration: Duration(seconds: 2),
-    ),
-  );
-  
-  // In a real implementation, you would use a PDF generation package
-  // like pdf: ^3.10.0 to create a detailed report
-  print('Generating PDF report with current sensor data...');
-  print('pH: $_currentPH, Turbidity: $_currentTurbidity, Bacteria: $_currentBacteria');
-}
-  Widget _buildSensorReading(String parameter, String value, Color color) {
-    return Column(
-      children: [
-        Text(
-          parameter,
-          style: const TextStyle(fontSize: 12),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: color,
-            fontSize: 16,
-          ),
-        ),
-      ],
-    );
+    // In a real implementation, you would use a PDF generation package
+    // like pdf: ^3.10.0 to create a detailed report
+    print('Generating PDF report with current sensor data...');
+    print(
+        'pH: $_currentPH, Turbidity: $_currentTurbidity, Bacteria: $_currentBacteria');
   }
 
   Widget _buildReportsTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Center(
-        child: Column(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+              'Intelligence & Analysis', Icons.insights_rounded),
+          const SizedBox(height: 20),
+          _buildASHAReportCard(
+              'Weekly Performance',
+              'Detailed breakdown of surveillance efficiency.',
+              Icons.analytics_rounded,
+              AppDesign.primaryNavy,
+              _generateWeeklyReport),
+          const SizedBox(height: 16),
+          _buildASHAReportCard(
+              'Predictive Risks',
+              'AI models forecasting potential outbreak zones.',
+              Icons.query_stats_rounded,
+              AppDesign.electricBlue,
+              _showPredictionReport),
+          const SizedBox(height: 16),
+          _buildASHAReportCard(
+              'Trend Visualizer',
+              'Dynamic mapping of community symptom patterns.',
+              Icons.trending_up_rounded,
+              AppDesign.aquaCyan,
+              _viewSymptomTrends),
+          const SizedBox(height: 40),
+          _buildSectionHeader('Vital Monitoring', Icons.monitor_heart_rounded),
+          const SizedBox(height: 16),
+          _buildHealthSensorModule(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildASHAReportCard(String title, String subtitle, IconData icon,
+      Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.grey[100]!),
+        ),
+        child: Row(
           children: [
-            Text(
-              'Reports & Analytics',
-              style: GoogleFonts.poppins(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF2E7D32),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(15),
               ),
+              child: Icon(icon, color: color),
             ),
-            const SizedBox(height: 16),
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Icon(Icons.analytics, size: 50, color: Color(0xFF4CAF50)),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Weekly Health Report',
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
                       style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Summary of symptoms and cases in your assigned area',
-                      style: GoogleFonts.poppins(),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _generateWeeklyReport();
-                      },
-                      icon: const Icon(Icons.download),
-                      label: const Text('Generate Report'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4CAF50),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Icon(Icons.trending_up, size: 50, color: Color(0xFF2196F3)),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Symptom Trends',
+                          fontWeight: FontWeight.bold,
+                          color: AppDesign.primaryNavy)),
+                  Text(subtitle,
                       style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Track symptom patterns over time',
-                      style: GoogleFonts.poppins(),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    // Health sensor connection
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        Column(
-                          children: [
-                            Icon(
-                              _isHealthSensorConnected ? Icons.monitor_heart : Icons.heart_broken,
-                              color: _isHealthSensorConnected ? Colors.green : Colors.red,
-                              size: 30,
-                            ),
-                            Text(
-                              _isHealthSensorConnected ? 'Health Monitor On' : 'Monitor Offline',
-                              style: TextStyle(
-                                color: _isHealthSensorConnected ? Colors.green : Colors.red,
-                              ),
-                            ),
-                          ],
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: _connectToHealthSensor,
-                          icon: const Icon(Icons.monitor_heart),
-                          label: Text(_isHealthSensorConnected ? 'Refresh Data' : 'Connect Monitor'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2196F3),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _viewSymptomTrends();
-                      },
-                      icon: const Icon(Icons.show_chart),
-                      label: const Text('View Trends'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2196F3),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                  ],
-                ),
+                          fontSize: 12, color: Colors.grey[600])),
+                ],
               ),
             ),
-            
-            // Alert sending section
-            const SizedBox(height: 24),
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Icon(Icons.warning, size: 50, color: Colors.orange),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Emergency Alerts',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Send alerts to health officials and community',
-                      style: GoogleFonts.poppins(),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _sendAlert();
-                      },
-                      icon: const Icon(Icons.notification_important),
-                      label: const Text('Send Alert'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            Icon(Icons.chevron_right_rounded, color: Colors.grey[350]),
           ],
         ),
       ),
     );
   }
-  void _showASHAAlertsDialog() {
-  showDialog(
-    context: context,
-    builder: (BuildContext context) {
-      return AlertDialog(
-        title: const Text('ASHA Worker Alerts'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: userData?['alerts']?.length ?? 0,
-            itemBuilder: (context, index) {
-              final alert = userData?['alerts']?[index];
-              if (alert == null) return const SizedBox();
-              
-              // Handle Firebase Timestamp conversion
-              DateTime date;
-              if (alert['date'] is Timestamp) {
-                date = (alert['date'] as Timestamp).toDate();
-              } else if (alert['date'] is int) {
-                date = DateTime.fromMillisecondsSinceEpoch(alert['date']);
-              } else {
-                date = DateTime.now(); // fallback
-              }
-              
-              final timeAgo = _getTimeAgo(date);
-              
-              return Column(
-                children: [
-                  ListTile(
-                    leading: _getAlertIcon(alert['alert'] ?? ''),
-                    title: Text(alert['alert'] ?? 'No alert message'),
-                    subtitle: Text(timeAgo),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.close, size: 20),
-                      onPressed: () async {
-                        await _deleteAlert(index);
-                        Navigator.of(context).pop();
-                        // Only reopen if there are still alerts
-                        if (userData?['alerts']?.isNotEmpty ?? false) {
-                          _showASHAAlertsDialog();
-                        }
-                      },
-                    ),
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      _handleAlertTap(alert);
-                    },
-                  ),
-                  if (index < (userData?['alerts']?.length ?? 0) - 1) 
-                    const Divider(),
-                ],
-              );
-            },
+
+  Widget _buildHealthSensorModule() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: AppDesign.glassDecoration(),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: _isHealthSensorConnected
+                ? Colors.green.withOpacity(0.1)
+                : Colors.grey[100],
+            child: Icon(Icons.bluetooth_connected_rounded,
+                color: _isHealthSensorConnected ? Colors.green : Colors.grey),
           ),
-        ),
-        actions: [
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Diagnostic Hub',
+                    style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        color: AppDesign.primaryNavy)),
+                Text(
+                    _isHealthSensorConnected
+                        ? 'SECURE CHANNEL ACTIVE'
+                        : 'DISCONNECTED',
+                    style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        color: _isHealthSensorConnected
+                            ? Colors.green
+                            : Colors.grey,
+                        fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
           TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-            },
-            child: const Text('Close All'),
+            onPressed: _connectToHealthSensor,
+            child: Text(_isHealthSensorConnected ? 'DISCONNECT' : 'CONNECT',
+                style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold, fontSize: 12)),
           ),
         ],
-      );
-    },
-  );
-}
-
-// Function to delete alert from both local state and database
-Future<void> _deleteAlert(int index) async {
-  try {
-    // Get the alert before removing it (for database reference)
-    final alertToRemove = userData?['alerts']?[index];
-    
-    // Remove from local state first
-    setState(() {
-      userData?['alerts']?.removeAt(index);
-    });
-    
-    // Update in Firebase database
-    // Replace 'users' with your actual collection name and 'userId' with the actual user ID
-    final userId = userData?['uid'] ?? FirebaseAuth.instance.currentUser?.uid;
-    if (userId != null) {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .update({
-            'alerts': FieldValue.arrayRemove([alertToRemove])
-          });
-    }
-    
-    print('Alert deleted successfully');
-  } catch (e) {
-    print('Error deleting alert: $e');
-    // Optional: Show error message to user
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Failed to delete alert: $e')),
+      ),
     );
   }
-}
-// Helper function to get time ago string
-String _getTimeAgo(DateTime date) {
-  final now = DateTime.now();
-  final difference = now.difference(date);
-  
-  if (difference.inMinutes < 1) return 'Just now';
-  if (difference.inHours < 1) return '${difference.inMinutes} minutes ago';
-  if (difference.inDays < 1) return '${difference.inHours} hours ago';
-  if (difference.inDays < 7) return '${difference.inDays} days ago';
-  if (difference.inDays < 30) return '${(difference.inDays / 7).floor()} weeks ago';
-  return '${(difference.inDays / 30).floor()} months ago';
-}
 
-// Helper function to get appropriate icon based on alert type
-Icon _getAlertIcon(String alert) {
-  if (alert.toLowerCase().contains('diarrhea') || 
-      alert.toLowerCase().contains('warning')) {
-    return const Icon(Icons.warning, color: Colors.orange);
-  } else if (alert.toLowerCase().contains('training') || 
-             alert.toLowerCase().contains('session')) {
-    return const Icon(Icons.info, color: Colors.blue);
-  } else if (alert.toLowerCase().contains('medical') || 
-             alert.toLowerCase().contains('supplies')) {
-    return const Icon(Icons.medical_services, color: Colors.green);
-  } else {
-    return const Icon(Icons.notifications, color: Colors.grey);
+  Widget _buildReportActionCard(String title, String description, IconData icon,
+      Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.grey[100]!),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.02),
+                blurRadius: 10,
+                offset: const Offset(0, 4)),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(15)),
+              child: Icon(icon, color: color),
+            ),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.bold,
+                          color: AppDesign.primaryNavy,
+                          fontSize: 16)),
+                  const SizedBox(height: 4),
+                  Text(description,
+                      style: GoogleFonts.poppins(
+                          fontSize: 12, color: Colors.grey[600]),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+          ],
+        ),
+      ),
+    );
   }
-}
 
-
-// Function to handle alert tap
-void _handleAlertTap(Map<String, dynamic> alert) {
-  // Handle specific alert actions based on alert content
-  print('Alert tapped: ${alert['alert']} from ${alert['from']}');
-  
-  // You can add specific logic here based on alert type
-  if (alert['alert'].toString().toLowerCase().contains('diarrhea')) {
-    // Navigate to diarrhea cases screen
-  } else if (alert['alert'].toString().toLowerCase().contains('training')) {
-    // Navigate to training session screen
-  }
-  // Add more conditions as needed
-}
-
-
-  void _showASHAQuickActions() {
+  void _showASHAAlertsDialog() {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Quick Actions'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.person_add, color: Colors.blue),
-                title: const Text('Register New Patient'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _showNewPatientDialog();
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.medical_services, color: Colors.green),
-                title: const Text('Record Symptoms'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _showSymptomReportDialog();
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.water_drop, color: Colors.blue),
-                title: const Text('Test Water Quality'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _showWaterTestDialog();
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.notifications, color: Colors.orange),
-                title: const Text('Send Alert'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _sendAlert();
-                },
-              ),
-            ],
+          title: const Text('ASHA Worker Alerts'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: userData?['alerts']?.length ?? 0,
+              itemBuilder: (context, index) {
+                final alert = userData?['alerts']?[index];
+                if (alert == null) return const SizedBox();
+
+                // Handle Firebase Timestamp conversion
+                DateTime date;
+                if (alert['date'] is Timestamp) {
+                  date = (alert['date'] as Timestamp).toDate();
+                } else if (alert['date'] is int) {
+                  date = DateTime.fromMillisecondsSinceEpoch(alert['date']);
+                } else {
+                  date = DateTime.now(); // fallback
+                }
+
+                final timeAgo = _getTimeAgo(date);
+
+                return Column(
+                  children: [
+                    ListTile(
+                      leading: _getAlertIcon(alert['alert'] ?? ''),
+                      title: Text(alert['alert'] ?? 'No alert message'),
+                      subtitle: Text(timeAgo),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.close, size: 20),
+                        onPressed: () async {
+                          await _deleteAlert(index);
+                          Navigator.of(context).pop();
+                          // Only reopen if there are still alerts
+                          if (userData?['alerts']?.isNotEmpty ?? false) {
+                            _showASHAAlertsDialog();
+                          }
+                        },
+                      ),
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _handleAlertTap(alert);
+                      },
+                    ),
+                    if (index < (userData?['alerts']?.length ?? 0) - 1)
+                      const Divider(),
+                  ],
+                );
+              },
+            ),
           ),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
               },
-              child: const Text('Cancel'),
+              child: const Text('Close All'),
             ),
           ],
         );
       },
     );
+  }
+
+// Function to delete alert from both local state and database
+  Future<void> _deleteAlert(int index) async {
+    try {
+      // Get the alert before removing it (for database reference)
+      final alertToRemove = userData?['alerts']?[index];
+
+      // Remove from local state first
+      setState(() {
+        userData?['alerts']?.removeAt(index);
+      });
+
+      // Update in Firebase database
+      // Replace 'users' with your actual collection name and 'userId' with the actual user ID
+      final userId = userData?['uid'] ?? FirebaseAuth.instance.currentUser?.uid;
+      if (userId != null) {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .update({
+          'alerts': FieldValue.arrayRemove([alertToRemove])
+        });
+      }
+
+      print('Alert deleted successfully');
+    } catch (e) {
+      print('Error deleting alert: $e');
+      // Optional: Show error message to user
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete alert: $e')),
+      );
+    }
+  }
+
+// Helper function to get time ago string
+  String _getTimeAgo(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inMinutes < 1) return 'Just now';
+    if (difference.inHours < 1) return '${difference.inMinutes} minutes ago';
+    if (difference.inDays < 1) return '${difference.inHours} hours ago';
+    if (difference.inDays < 7) return '${difference.inDays} days ago';
+    if (difference.inDays < 30)
+      return '${(difference.inDays / 7).floor()} weeks ago';
+    return '${(difference.inDays / 30).floor()} months ago';
+  }
+
+// Helper function to get appropriate icon based on alert type
+  Icon _getAlertIcon(String alert) {
+    if (alert.toLowerCase().contains('diarrhea') ||
+        alert.toLowerCase().contains('warning')) {
+      return const Icon(Icons.warning, color: Colors.orange);
+    } else if (alert.toLowerCase().contains('training') ||
+        alert.toLowerCase().contains('session')) {
+      return const Icon(Icons.info, color: Colors.blue);
+    } else if (alert.toLowerCase().contains('medical') ||
+        alert.toLowerCase().contains('supplies')) {
+      return const Icon(Icons.medical_services, color: Colors.green);
+    } else {
+      return const Icon(Icons.notifications, color: Colors.grey);
+    }
+  }
+
+// Function to handle alert tap
+  void _handleAlertTap(Map<String, dynamic> alert) {
+    // Handle specific alert actions based on alert content
+    print('Alert tapped: ${alert['alert']} from ${alert['from']}');
+
+    // You can add specific logic here based on alert type
+    if (alert['alert'].toString().toLowerCase().contains('diarrhea')) {
+      // Navigate to diarrhea cases screen
+    } else if (alert['alert'].toString().toLowerCase().contains('training')) {
+      // Navigate to training session screen
+    }
+    // Add more conditions as needed
   }
 
   void _showNewPatientDialog() {
@@ -2693,22 +2868,27 @@ void _handleAlertTap(Map<String, dynamic> alert) {
                 children: [
                   TextFormField(
                     decoration: const InputDecoration(labelText: 'Full Name'),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter name' : null,
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Enter name' : null,
                     onSaved: (v) => name = v!.trim(),
                   ),
                   TextFormField(
                     decoration: const InputDecoration(labelText: 'Age'),
                     keyboardType: TextInputType.number,
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter age' : null,
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Enter age' : null,
                     onSaved: (v) => age = v!.trim(),
                   ),
                   TextFormField(
                     decoration: const InputDecoration(labelText: 'Village'),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter village' : null,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? 'Enter village'
+                        : null,
                     onSaved: (v) => village = v!.trim(),
                   ),
                   TextFormField(
-                    decoration: const InputDecoration(labelText: 'Initial Symptoms'),
+                    decoration:
+                        const InputDecoration(labelText: 'Initial Symptoms'),
                     maxLines: 2,
                     onSaved: (v) => symptoms = v!.trim(),
                   ),
@@ -2736,12 +2916,13 @@ void _handleAlertTap(Map<String, dynamic> alert) {
                     });
                   });
                   FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(uid)
-                  .update({'patients':userData?['patients']});
+                      .collection('users')
+                      .doc(uid)
+                      .update({'patients': userData?['patients']});
                   Navigator.of(context).pop();
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Patient registered successfully')),
+                    const SnackBar(
+                        content: Text('Patient registered successfully')),
                   );
                 }
               },
@@ -2753,359 +2934,799 @@ void _handleAlertTap(Map<String, dynamic> alert) {
     );
   }
 
-
-void _showSymptomReportDialog() {
-  final _formKey = GlobalKey<FormState>();
-  String apiUrl = modelUrl;  
-  showDialog(
-    context: context,
-    builder: (context) {
-      String? selectedPatient;
-      String severity = 'Mild';
-      DateTime onsetDate = DateTime.now();
-      String prediction = 'Select symptoms to analyze';
-      bool isLoading = false;
-
-      // Full list of symptoms (add all 100+ symptoms here)
-      List<String> allSymptoms = ["abnormal appearing skin", "abnormal appearing tongue", "abnormal breathing sounds", "abnormal involuntary movements", "abnormal movement of eyelid", "abnormal size or shape of ear", "absence of menstruation", "abusing alcohol", "acne or pimples", "ache all over", "allergic reaction", "antisocial behavior", "anxiety and nervousness", "apnea", "arm cramps or spasms", "arm lump or mass", "arm pain", "arm stiffness or tightness", "arm swelling", "arm weakness", "back cramps or spasms", "back mass or lump", "back pain", "back stiffness or tightness", "back swelling", "back weakness", "bedwetting", "bleeding from ear", "bleeding from eye", "bleeding gums", "bleeding in mouth", "bleeding or discharge from nipple", "blindness", "blood clots during menstrual periods", "blood in stool", "blood in urine", "bones are painful", "bowlegged or knock-kneed", "breathing fast", "burning abdominal pain", "burning chest pain", "cough", "coughing up sputum", "cross-eyed", "changes in stool appearance", "chest tightness", "chills", "cloudy eye", "congestion in chest", "constipation", "coryza", "cramps and spasms", "decreased appetite", "decreased heart rate", "delusions or hallucinations", "depression", "depressive or psychotic symptoms", "diaper rash", "diarrhea", "difficulty breathing", "difficulty eating", "difficulty in swallowing", "difficulty speaking", "diminished hearing", "diminished vision", "discharge in stools", "disturbance of memory", "disturbance of smell or taste", "double vision", "drainage in throat", "drug abuse", "dry lips", "dry or flaky scalp", "dizziness", "ear pain", "early or late onset of menopause", "elbow cramps or spasms", "elbow lump or mass", "elbow pain", "elbow stiffness or tightness", "elbow swelling", "elbow weakness", "emotional symptoms", "excessive anger", "excessive appetite", "excessive growth", "excessive urination at night", "eye burns or stings", "eye deviation", "eye moves abnormally", "eye pain", "eye redness", "eyelid lesion or rash", "eyelid retracted", "eyelid swelling", "facial pain", "fainting", "fatigue", "fears and phobias", "feeling cold", "feeling hot", "feeling hot and cold", "feeling ill", "fever", "flatulence", "fluid in ear", "fluid retention", "flu-like syndrome", "focal weakness", "foot or toe cramps or spasms", "foot or toe lump or mass", "foot or toe pain", "foot or toe stiffness or tightness", "foot or toe swelling", "foot or toe weakness", "foreign body sensation in eye", "frequent menstruation", "frequent urination", "frontal headache", "flushing", "gum pain", "hand or finger cramps or spasms", "hand or finger lump or mass", "hand or finger pain", "hand or finger stiffness or tightness", "hand or finger swelling", "hand or finger weakness", "headache", "heartburn", "heavy menstrual flow", "hemoptysis", "hesitancy", "hip lump or mass", "hip pain", "hip stiffness or tightness", "hip swelling", "hip weakness", "hoarse voice", "hostile behavior", "hot flashes", "hurts to breath", "hysterical behavior", "impotence", "incontinence of stool", "increased heart rate", "infertility", "infant feeding problem", "infant spitting up", "infrequent menstruation", "insomnia", "intermenstrual bleeding", "involuntary urination", "irregular appearing nails", "irregular appearing scalp", "irregular belly button", "irregular heartbeat", "irritable infant", "itching of scrotum", "itching of skin", "itching of the anus", "itchiness of eye", "itchy ear(s)", "itchy eyelid", "itchy scalp", "jaw pain", "jaw swelling", "jaundice", "joint pain", "joint stiffness or tightness", "joint swelling", "kidney mass", "knee cramps or spasms", "knee lump or mass", "knee pain", "knee stiffness or tightness", "knee swelling", "knee weakness", "lacrimation", "lack of growth", "leg cramps or spasms", "leg lump or mass", "leg pain", "leg stiffness or tightness", "leg swelling", "leg weakness", "lip sore", "lip swelling", "long menstrual periods", "loss of sensation", "loss of sex drive", "lump in throat", "lump over jaw", "lump or mass of breast", "low back cramps or spasms", "low back pain", "low back stiffness or tightness", "low back swelling", "low back weakness", "low self-esteem", "low urine output", "lymphedema", "mass in scrotum", "mass on ear", "mass on eyelid", "mass on vulva", "mass or swelling around the anus", "melena", "mouth dryness", "mouth pain", "mouth ulcer", "muscle cramps, contractures, or spasms", "muscle pain", "muscle stiffness or tightness", "muscle swelling", "muscle weakness", "nailbiting", "nasal congestion", "neck cramps or spasms", "neck mass", "neck pain", "neck stiffness or tightness", "neck swelling", "neck weakness", "nightmares", "nose deformity", "nosebleed", "nausea", "obsessions and compulsions", "pain during intercourse", "pain during pregnancy", "pain in eye", "pain in gums", "pain in testicles", "pain of the anus", "pain or soreness of breast", "pain during menstruation", "painful sinuses", "painful urination", "pallor", "palpitations", "paresthesia", "pelvic pain", "pelvic pressure", "penile discharge", "penis pain", "penis redness", "peripheral edema", "plugged feeling in ear", "polyuria", "poor circulation", "postpartum problems of the breast", "posture problems", "premature ejaculation", "premenstrual tension or irritability", "problems during pregnancy", "problems with movement", "problems with orgasm", "problems with shape or size of breast", "pulling at ears", "pupils unequal", "pus draining from ear", "pus in sputum", "pus in urine", "pus in sputum", "rectal bleeding", "redness in ear", "redness in or around nose", "regurgitation", "regurgitation.1", "recent pregnancy", "recent weight loss", "restlessness", "retention of urine", "rib pain", "ringing in ear", "scanty menstrual flow", "seizures", "sharp abdominal pain", "sharp chest pain", "shortness of breath", "shoulder cramps or spasms", "shoulder lump or mass", "shoulder pain", "shoulder stiffness or tightness", "shoulder swelling", "shoulder weakness", "side pain", "sinus congestion", "skin dryness, peeling, scaliness, or roughness", "skin growth", "skin irritation", "skin lesion", "skin moles", "skin oiliness", "skin on arm or hand looks infected", "skin on head or neck looks infected", "skin on leg or foot looks infected", "skin pain", "skin rash", "skin swelling", "sleepiness", "sleepwalking", "slurring words", "smoking problems", "sneezing", "sore in nose", "sore throat", "spots or clouds in vision", "spotting or bleeding during pregnancy", "stiffness all over", "stomach bloating", "stuttering or stammering", "suprapubic pain", "swelling of scrotum", "swollen abdomen", "swollen eye", "swollen lymph nodes", "swollen or red tonsils", "swollen tongue", "sweating", "symptoms of bladder", "symptoms of eye", "symptoms of face", "symptoms of infants", "symptoms of kidneys", "symptoms of prostate", "symptoms of the scrotum and testes", "temper problems", "thirst", "throat feels tight", "throat irritation", "throat redness", "throat swelling", "tongue bleeding", "tongue lesions", "tongue pain", "toothache", "too little hair", "unpredictable menstruation", "unusual color or odor to urine", "underweight", "upper abdominal pain", "unwanted hair", "uterine contractions", "vaginal bleeding after menopause", "vaginal discharge", "vaginal dryness", "vaginal itching", "vaginal pain", "vaginal redness", "vomiting", "vomiting blood", "vulvar irritation", "vulvar sore", "warts", "weakness", "weight gain", "wheezing", "white discharge from eye", "wrist cramps or spasms", "wrist lump or mass", "wrist pain", "wrist stiffness or tightness", "wrist swelling", "wrist weakness", "wrinkles on skin"];
-
-      Map<String, bool> selectedSymptoms = { for (var s in allSymptoms) s: false };
-      List<String> filteredSymptoms = List.from(allSymptoms);
-      TextEditingController searchController = TextEditingController();
-
-      return StatefulBuilder(
-        builder: (context, setState) {
-
-          // Filter symptoms on search
-          void _filterSymptoms() {
-            String query = searchController.text.toLowerCase();
-            setState(() {
-              filteredSymptoms = allSymptoms
-                  .where((symptom) => symptom.toLowerCase().contains(query))
-                  .toList();
-            });
-          }
-
-          searchController.addListener(_filterSymptoms);
-
-          // API call
-          Future<void> predictDiseaseAPI() async {
-            List<String> chosenSymptoms = selectedSymptoms.entries
-                .where((entry) => entry.value)
-                .map((entry) => entry.key)
-                .toList();
-
-            if (chosenSymptoms.length < 3) {
-              setState(() => prediction = 'Select at least 3 symptoms to analyze');
-              return;
-            }
-
-            setState(() => isLoading = true);
-
-            try {
-              final url = Uri.parse('$apiUrl/predict');
-              Map<String, dynamic> apiData = {};
-              selectedSymptoms.forEach((key, value) { apiData[key] = value; });
-
-              final response = await http.post(
-                url,
-                headers: {'Content-Type': 'application/json'},
-                body: json.encode(apiData),
-              );
-
-              if (response.statusCode == 200) {
-                final data = json.decode(response.body);
-                if (data['success'] == true) {
-                  setState(() => prediction = data['prediction']);
-                } else {
-                  setState(() => prediction = 'Prediction error: ${data['error']}');
-                }
-              } else {
-                setState(() => prediction = 'Server error: ${response.statusCode}');
-              }
-            } catch (e) {
-              setState(() => prediction = 'Connection error: $e');
-            } finally {
-              setState(() => isLoading = false);
-            }
-          }
-
-          return Dialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Container(
-              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
-              padding: const EdgeInsets.all(16),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'Record Symptoms',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Patient dropdown
-                    DropdownButtonFormField<String>(
-                      decoration: InputDecoration(
-                        labelText: 'Select Patient',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      value: selectedPatient,
-                      items: (userData?['patients'] as List<dynamic>?)
-                          ?.map<DropdownMenuItem<String>>((patient) {
-                        return DropdownMenuItem<String>(
-                          value: patient['name']?.toString() ?? '',
-                          child: Text(patient['name']?.toString() ?? 'Unknown'),
-                        );
-                      }).toList() ?? [],
-                      onChanged: (value) => setState(() => selectedPatient = value),
-                      validator: (value) => value == null ? 'Please select a patient' : null,
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Search bar
-                    TextField(
-                      controller: searchController,
-                      decoration: InputDecoration(
-                        prefixIcon: const Icon(Icons.search),
-                        hintText: 'Search symptoms...',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Symptom selection list
-                    Expanded(
-                      child: Scrollbar(
-                        thumbVisibility: true,
-                        child: SingleChildScrollView(
-                          child: Column(
-                            children: filteredSymptoms.map((symptom) {
-                              return CheckboxListTile(
-                                title: Text(symptom),
-                                value: selectedSymptoms[symptom],
-                                onChanged: (bool? value) {
-                                  setState(() {
-                                    selectedSymptoms[symptom] = value!;
-                                  });
-                                  // Call API only if at least 3 symptoms selected
-                                  if (selectedSymptoms.values.where((v) => v).length >= 3) {
-                                    predictDiseaseAPI();
-                                  } else {
-                                    setState(() => prediction = 'Select at least 3 symptoms to analyze');
-                                  }
-                                },
-                                controlAffinity: ListTileControlAffinity.leading,
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Prediction display
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Predicted Condition:',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                          ),
-                          const SizedBox(height: 4),
-                          isLoading
-                              ? Row(
-                                  children: const [
-                                    SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    ),
-                                    SizedBox(width: 10),
-                                    Text(
-                                      'Analyzing symptoms...',
-                                      style: TextStyle(
-                                        color: Colors.grey,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              : Text(
-                                  prediction,
-                                  style: TextStyle(
-                                    color: _getPredictionColor(prediction),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Severity and onset date row
-                    Row(
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: DropdownButtonFormField<String>(
-                            decoration: InputDecoration(
-                              labelText: 'Severity',
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            ),
-                            value: severity,
-                            items: const ['Mild', 'Moderate', 'Severe']
-                                .map<DropdownMenuItem<String>>((String value) {
-                              return DropdownMenuItem<String>(
-                                value: value,
-                                child: Text(value),
-                              );
-                            }).toList(),
-                            onChanged: (value) => setState(() => severity = value!),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          flex: 3,
-                          child: InkWell(
-                            onTap: () async {
-                              final DateTime? picked = await showDatePicker(
-                                context: context,
-                                initialDate: onsetDate,
-                                firstDate: DateTime.now().subtract(const Duration(days: 30)),
-                                lastDate: DateTime.now(),
-                              );
-                              if (picked != null && picked != onsetDate) {
-                                setState(() => onsetDate = picked);
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    '${onsetDate.day}/${onsetDate.month}/${onsetDate.year}',
-                                    style: TextStyle(color: Colors.grey[700]),
-                                  ),
-                                  const Icon(Icons.calendar_today, size: 20, color: Colors.grey),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // Save & Cancel buttons
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text('Cancel', style: TextStyle(fontSize: 16)),
-                        ),
-                        const SizedBox(width: 12),
-                        ElevatedButton(
-                          onPressed: () {
-                            if (_formKey.currentState!.validate()) {
-                              _formKey.currentState!.save();
-
-                              List<String> chosenSymptoms = selectedSymptoms.entries
-                                  .where((entry) => entry.value)
-                                  .map((entry) => entry.key)
-                                  .toList();
-
-                              Navigator.of(context).pop();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                      'Symptoms recorded successfully. Prediction: $prediction'),
-                                ),
-                              );
-
-                              // Save recent visit
-                              if (mounted) {
-                                setState(() {
-                                  _recentVisits.insert(0, {
-                                    'date': 'Today',
-                                    'visits': 1,
-                                    'symptoms': chosenSymptoms,
-                                    'prediction': prediction,
-                                    'severity': severity,
-                                    'onsetDate': onsetDate.toString(),
-                                  });
-                                });
-                              }
-                            }
-                          },
-                          child: const Text('Save', style: TextStyle(fontSize: 16)),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      );
-    },
-  );
-}
-
-// Helper function to get color based on prediction
-Color _getPredictionColor(String prediction) {
-  if (prediction.contains('Cholera') || prediction.contains('Severe')) {
-    return Colors.red;
-  } else if (prediction.contains('error') || prediction.contains('fail')) {
-    return Colors.orange;
-  } else {
-    return Colors.blue[700]!;
-  }
-}
-
-  void _showWaterTestDialog() {
+  void _showSymptomReportDialog() {
+    final _formKey = GlobalKey<FormState>();
+    String apiUrl = modelUrl;
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Test Water Quality'),
-          content: const Text('Water testing functionality would be implemented here.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-          ],
+        String? selectedPatient;
+        String severity = 'Mild';
+        DateTime onsetDate = DateTime.now();
+        String prediction = 'Select symptoms to analyze';
+        bool isLoading = false;
+
+        // Full list of symptoms (add all 100+ symptoms here)
+        List<String> allSymptoms = [
+          "abnormal appearing skin",
+          "abnormal appearing tongue",
+          "abnormal breathing sounds",
+          "abnormal involuntary movements",
+          "abnormal movement of eyelid",
+          "abnormal size or shape of ear",
+          "absence of menstruation",
+          "abusing alcohol",
+          "acne or pimples",
+          "ache all over",
+          "allergic reaction",
+          "antisocial behavior",
+          "anxiety and nervousness",
+          "apnea",
+          "arm cramps or spasms",
+          "arm lump or mass",
+          "arm pain",
+          "arm stiffness or tightness",
+          "arm swelling",
+          "arm weakness",
+          "back cramps or spasms",
+          "back mass or lump",
+          "back pain",
+          "back stiffness or tightness",
+          "back swelling",
+          "back weakness",
+          "bedwetting",
+          "bleeding from ear",
+          "bleeding from eye",
+          "bleeding gums",
+          "bleeding in mouth",
+          "bleeding or discharge from nipple",
+          "blindness",
+          "blood clots during menstrual periods",
+          "blood in stool",
+          "blood in urine",
+          "bones are painful",
+          "bowlegged or knock-kneed",
+          "breathing fast",
+          "burning abdominal pain",
+          "burning chest pain",
+          "cough",
+          "coughing up sputum",
+          "cross-eyed",
+          "changes in stool appearance",
+          "chest tightness",
+          "chills",
+          "cloudy eye",
+          "congestion in chest",
+          "constipation",
+          "coryza",
+          "cramps and spasms",
+          "decreased appetite",
+          "decreased heart rate",
+          "delusions or hallucinations",
+          "depression",
+          "depressive or psychotic symptoms",
+          "diaper rash",
+          "diarrhea",
+          "difficulty breathing",
+          "difficulty eating",
+          "difficulty in swallowing",
+          "difficulty speaking",
+          "diminished hearing",
+          "diminished vision",
+          "discharge in stools",
+          "disturbance of memory",
+          "disturbance of smell or taste",
+          "double vision",
+          "drainage in throat",
+          "drug abuse",
+          "dry lips",
+          "dry or flaky scalp",
+          "dizziness",
+          "ear pain",
+          "early or late onset of menopause",
+          "elbow cramps or spasms",
+          "elbow lump or mass",
+          "elbow pain",
+          "elbow stiffness or tightness",
+          "elbow swelling",
+          "elbow weakness",
+          "emotional symptoms",
+          "excessive anger",
+          "excessive appetite",
+          "excessive growth",
+          "excessive urination at night",
+          "eye burns or stings",
+          "eye deviation",
+          "eye moves abnormally",
+          "eye pain",
+          "eye redness",
+          "eyelid lesion or rash",
+          "eyelid retracted",
+          "eyelid swelling",
+          "facial pain",
+          "fainting",
+          "fatigue",
+          "fears and phobias",
+          "feeling cold",
+          "feeling hot",
+          "feeling hot and cold",
+          "feeling ill",
+          "fever",
+          "flatulence",
+          "fluid in ear",
+          "fluid retention",
+          "flu-like syndrome",
+          "focal weakness",
+          "foot or toe cramps or spasms",
+          "foot or toe lump or mass",
+          "foot or toe pain",
+          "foot or toe stiffness or tightness",
+          "foot or toe swelling",
+          "foot or toe weakness",
+          "foreign body sensation in eye",
+          "frequent menstruation",
+          "frequent urination",
+          "frontal headache",
+          "flushing",
+          "gum pain",
+          "hand or finger cramps or spasms",
+          "hand or finger lump or mass",
+          "hand or finger pain",
+          "hand or finger stiffness or tightness",
+          "hand or finger swelling",
+          "hand or finger weakness",
+          "headache",
+          "heartburn",
+          "heavy menstrual flow",
+          "hemoptysis",
+          "hesitancy",
+          "hip lump or mass",
+          "hip pain",
+          "hip stiffness or tightness",
+          "hip swelling",
+          "hip weakness",
+          "hoarse voice",
+          "hostile behavior",
+          "hot flashes",
+          "hurts to breath",
+          "hysterical behavior",
+          "impotence",
+          "incontinence of stool",
+          "increased heart rate",
+          "infertility",
+          "infant feeding problem",
+          "infant spitting up",
+          "infrequent menstruation",
+          "insomnia",
+          "intermenstrual bleeding",
+          "involuntary urination",
+          "irregular appearing nails",
+          "irregular appearing scalp",
+          "irregular belly button",
+          "irregular heartbeat",
+          "irritable infant",
+          "itching of scrotum",
+          "itching of skin",
+          "itching of the anus",
+          "itchiness of eye",
+          "itchy ear(s)",
+          "itchy eyelid",
+          "itchy scalp",
+          "jaw pain",
+          "jaw swelling",
+          "jaundice",
+          "joint pain",
+          "joint stiffness or tightness",
+          "joint swelling",
+          "kidney mass",
+          "knee cramps or spasms",
+          "knee lump or mass",
+          "knee pain",
+          "knee stiffness or tightness",
+          "knee swelling",
+          "knee weakness",
+          "lacrimation",
+          "lack of growth",
+          "leg cramps or spasms",
+          "leg lump or mass",
+          "leg pain",
+          "leg stiffness or tightness",
+          "leg swelling",
+          "leg weakness",
+          "lip sore",
+          "lip swelling",
+          "long menstrual periods",
+          "loss of sensation",
+          "loss of sex drive",
+          "lump in throat",
+          "lump over jaw",
+          "lump or mass of breast",
+          "low back cramps or spasms",
+          "low back pain",
+          "low back stiffness or tightness",
+          "low back swelling",
+          "low back weakness",
+          "low self-esteem",
+          "low urine output",
+          "lymphedema",
+          "mass in scrotum",
+          "mass on ear",
+          "mass on eyelid",
+          "mass on vulva",
+          "mass or swelling around the anus",
+          "melena",
+          "mouth dryness",
+          "mouth pain",
+          "mouth ulcer",
+          "muscle cramps, contractures, or spasms",
+          "muscle pain",
+          "muscle stiffness or tightness",
+          "muscle swelling",
+          "muscle weakness",
+          "nailbiting",
+          "nasal congestion",
+          "neck cramps or spasms",
+          "neck mass",
+          "neck pain",
+          "neck stiffness or tightness",
+          "neck swelling",
+          "neck weakness",
+          "nightmares",
+          "nose deformity",
+          "nosebleed",
+          "nausea",
+          "obsessions and compulsions",
+          "pain during intercourse",
+          "pain during pregnancy",
+          "pain in eye",
+          "pain in gums",
+          "pain in testicles",
+          "pain of the anus",
+          "pain or soreness of breast",
+          "pain during menstruation",
+          "painful sinuses",
+          "painful urination",
+          "pallor",
+          "palpitations",
+          "paresthesia",
+          "pelvic pain",
+          "pelvic pressure",
+          "penile discharge",
+          "penis pain",
+          "penis redness",
+          "peripheral edema",
+          "plugged feeling in ear",
+          "polyuria",
+          "poor circulation",
+          "postpartum problems of the breast",
+          "posture problems",
+          "premature ejaculation",
+          "premenstrual tension or irritability",
+          "problems during pregnancy",
+          "problems with movement",
+          "problems with orgasm",
+          "problems with shape or size of breast",
+          "pulling at ears",
+          "pupils unequal",
+          "pus draining from ear",
+          "pus in sputum",
+          "pus in urine",
+          "pus in sputum",
+          "rectal bleeding",
+          "redness in ear",
+          "redness in or around nose",
+          "regurgitation",
+          "regurgitation.1",
+          "recent pregnancy",
+          "recent weight loss",
+          "restlessness",
+          "retention of urine",
+          "rib pain",
+          "ringing in ear",
+          "scanty menstrual flow",
+          "seizures",
+          "sharp abdominal pain",
+          "sharp chest pain",
+          "shortness of breath",
+          "shoulder cramps or spasms",
+          "shoulder lump or mass",
+          "shoulder pain",
+          "shoulder stiffness or tightness",
+          "shoulder swelling",
+          "shoulder weakness",
+          "side pain",
+          "sinus congestion",
+          "skin dryness, peeling, scaliness, or roughness",
+          "skin growth",
+          "skin irritation",
+          "skin lesion",
+          "skin moles",
+          "skin oiliness",
+          "skin on arm or hand looks infected",
+          "skin on head or neck looks infected",
+          "skin on leg or foot looks infected",
+          "skin pain",
+          "skin rash",
+          "skin swelling",
+          "sleepiness",
+          "sleepwalking",
+          "slurring words",
+          "smoking problems",
+          "sneezing",
+          "sore in nose",
+          "sore throat",
+          "spots or clouds in vision",
+          "spotting or bleeding during pregnancy",
+          "stiffness all over",
+          "stomach bloating",
+          "stuttering or stammering",
+          "suprapubic pain",
+          "swelling of scrotum",
+          "swollen abdomen",
+          "swollen eye",
+          "swollen lymph nodes",
+          "swollen or red tonsils",
+          "swollen tongue",
+          "sweating",
+          "symptoms of bladder",
+          "symptoms of eye",
+          "symptoms of face",
+          "symptoms of infants",
+          "symptoms of kidneys",
+          "symptoms of prostate",
+          "symptoms of the scrotum and testes",
+          "temper problems",
+          "thirst",
+          "throat feels tight",
+          "throat irritation",
+          "throat redness",
+          "throat swelling",
+          "tongue bleeding",
+          "tongue lesions",
+          "tongue pain",
+          "toothache",
+          "too little hair",
+          "unpredictable menstruation",
+          "unusual color or odor to urine",
+          "underweight",
+          "upper abdominal pain",
+          "unwanted hair",
+          "uterine contractions",
+          "vaginal bleeding after menopause",
+          "vaginal discharge",
+          "vaginal dryness",
+          "vaginal itching",
+          "vaginal pain",
+          "vaginal redness",
+          "vomiting",
+          "vomiting blood",
+          "vulvar irritation",
+          "vulvar sore",
+          "warts",
+          "weakness",
+          "weight gain",
+          "wheezing",
+          "white discharge from eye",
+          "wrist cramps or spasms",
+          "wrist lump or mass",
+          "wrist pain",
+          "wrist stiffness or tightness",
+          "wrist swelling",
+          "wrist weakness",
+          "wrinkles on skin"
+        ];
+
+        Map<String, bool> selectedSymptoms = {
+          for (var s in allSymptoms) s: false
+        };
+        List<String> filteredSymptoms = List.from(allSymptoms);
+        TextEditingController searchController = TextEditingController();
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+            // Filter symptoms on search
+            void _filterSymptoms() {
+              String query = searchController.text.toLowerCase();
+              setState(() {
+                filteredSymptoms = allSymptoms
+                    .where((symptom) => symptom.toLowerCase().contains(query))
+                    .toList();
+              });
+            }
+
+            searchController.addListener(_filterSymptoms);
+
+            // API call
+            Future<void> predictDiseaseAPI() async {
+              List<String> chosenSymptoms = selectedSymptoms.entries
+                  .where((entry) => entry.value)
+                  .map((entry) => entry.key)
+                  .toList();
+
+              if (chosenSymptoms.length < 3) {
+                setState(
+                    () => prediction = 'Select at least 3 symptoms to analyze');
+                return;
+              }
+
+              setState(() => isLoading = true);
+
+              try {
+                final url = Uri.parse('$apiUrl/predict');
+                Map<String, dynamic> apiData = {};
+                selectedSymptoms.forEach((key, value) {
+                  apiData[key] = value;
+                });
+
+                final response = await http.post(
+                  url,
+                  headers: {'Content-Type': 'application/json'},
+                  body: json.encode(apiData),
+                );
+
+                if (response.statusCode == 200) {
+                  final data = json.decode(response.body);
+                  if (data['success'] == true) {
+                    setState(() => prediction = data['prediction']);
+                  } else {
+                    setState(() =>
+                        prediction = 'Prediction error: ${data['error']}');
+                  }
+                } else {
+                  setState(() =>
+                      prediction = 'Server error: ${response.statusCode}');
+                }
+              } catch (e) {
+                setState(() => prediction = 'Connection error: $e');
+              } finally {
+                setState(() => isLoading = false);
+              }
+            }
+
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              child: Container(
+                constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.9),
+                padding: const EdgeInsets.all(16),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Record Symptoms',
+                        style: TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Patient dropdown
+                      DropdownButtonFormField<String>(
+                        decoration: InputDecoration(
+                          labelText: 'Select Patient',
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                        ),
+                        value: selectedPatient,
+                        items: (userData?['patients'] as List<dynamic>?)
+                                ?.map<DropdownMenuItem<String>>((patient) {
+                              return DropdownMenuItem<String>(
+                                value: patient['name']?.toString() ?? '',
+                                child: Text(
+                                    patient['name']?.toString() ?? 'Unknown'),
+                              );
+                            }).toList() ??
+                            [],
+                        onChanged: (value) =>
+                            setState(() => selectedPatient = value),
+                        validator: (value) =>
+                            value == null ? 'Please select a patient' : null,
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Search bar
+                      TextField(
+                        controller: searchController,
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.search),
+                          hintText: 'Search symptoms...',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Symptom selection list
+                      Expanded(
+                        child: Scrollbar(
+                          thumbVisibility: true,
+                          child: SingleChildScrollView(
+                            child: Column(
+                              children: filteredSymptoms.map((symptom) {
+                                return CheckboxListTile(
+                                  title: Text(symptom),
+                                  value: selectedSymptoms[symptom],
+                                  onChanged: (bool? value) {
+                                    setState(() {
+                                      selectedSymptoms[symptom] = value!;
+                                    });
+                                    // Call API only if at least 3 symptoms selected
+                                    if (selectedSymptoms.values
+                                            .where((v) => v)
+                                            .length >=
+                                        3) {
+                                      predictDiseaseAPI();
+                                    } else {
+                                      setState(() => prediction =
+                                          'Select at least 3 symptoms to analyze');
+                                    }
+                                  },
+                                  controlAffinity:
+                                      ListTileControlAffinity.leading,
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Prediction display
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Predicted Condition:',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            const SizedBox(height: 4),
+                            isLoading
+                                ? Row(
+                                    children: const [
+                                      SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      ),
+                                      SizedBox(width: 10),
+                                      Text(
+                                        'Analyzing symptoms...',
+                                        style: TextStyle(
+                                          color: Colors.grey,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Text(
+                                    prediction,
+                                    style: TextStyle(
+                                      color: _getPredictionColor(prediction),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Severity and onset date row
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: DropdownButtonFormField<String>(
+                              decoration: InputDecoration(
+                                labelText: 'Severity',
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8)),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 8),
+                              ),
+                              value: severity,
+                              items: const [
+                                'Mild',
+                                'Moderate',
+                                'Severe'
+                              ].map<DropdownMenuItem<String>>((String value) {
+                                return DropdownMenuItem<String>(
+                                  value: value,
+                                  child: Text(value),
+                                );
+                              }).toList(),
+                              onChanged: (value) =>
+                                  setState(() => severity = value!),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            flex: 3,
+                            child: InkWell(
+                              onTap: () async {
+                                final DateTime? picked = await showDatePicker(
+                                  context: context,
+                                  initialDate: onsetDate,
+                                  firstDate: DateTime.now()
+                                      .subtract(const Duration(days: 30)),
+                                  lastDate: DateTime.now(),
+                                );
+                                if (picked != null && picked != onsetDate) {
+                                  setState(() => onsetDate = picked);
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 16),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      '${onsetDate.day}/${onsetDate.month}/${onsetDate.year}',
+                                      style: TextStyle(color: Colors.grey[700]),
+                                    ),
+                                    const Icon(Icons.calendar_today,
+                                        size: 20, color: Colors.grey),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Save & Cancel buttons
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Cancel',
+                                style: TextStyle(fontSize: 16)),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton(
+                            onPressed: () async {
+                              if (_formKey.currentState!.validate()) {
+                                _formKey.currentState!.save();
+
+                                List<String> chosenSymptoms = selectedSymptoms
+                                    .entries
+                                    .where((entry) => entry.value)
+                                    .map((entry) => entry.key)
+                                    .toList();
+
+                                // Update Firestore
+                                if (userData != null &&
+                                    selectedPatient != null) {
+                                  List<dynamic> patients =
+                                      List.from(userData!['patients'] ?? []);
+                                  int patientIndex = patients.indexWhere(
+                                      (p) => p['name'] == selectedPatient);
+
+                                  if (patientIndex != -1) {
+                                    Map<String, dynamic> patient =
+                                        Map<String, dynamic>.from(
+                                            patients[patientIndex]);
+
+                                    // Add prediction to patient's data
+                                    List<dynamic> predictions =
+                                        List.from(patient['predictions'] ?? []);
+                                    predictions.add({
+                                      'prediction': prediction,
+                                      'symptoms': chosenSymptoms,
+                                      'severity': severity,
+                                      'onsetDate':
+                                          Timestamp.fromDate(onsetDate),
+                                      'timestamp': Timestamp.now(),
+                                    });
+
+                                    patient['predictions'] = predictions;
+                                    patient['lastVisit'] = Timestamp.now();
+                                    patient['status'] =
+                                        'Follow-up needed'; // Update status based on prediction
+
+                                    patients[patientIndex] = patient;
+
+                                    try {
+                                      await FirebaseFirestore.instance
+                                          .collection('users')
+                                          .doc(uid)
+                                          .update({'patients': patients});
+
+                                      // Update local state if successful
+                                      if (mounted) {
+                                        setState(() {
+                                          userData!['patients'] = patients;
+                                        });
+                                      }
+                                    } catch (e) {
+                                      print('Error updating Firestore: $e');
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                            content: Text(
+                                                'Failed to save to cloud: $e')),
+                                      );
+                                    }
+                                  }
+                                }
+
+                                Navigator.of(context).pop();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                        'Symptoms recorded successfully for $selectedPatient. Prediction: $prediction'),
+                                  ),
+                                );
+
+                                // Save recent visit (local list update)
+                                if (mounted) {
+                                  setState(() {
+                                    _recentVisits.insert(0, {
+                                      'patient': selectedPatient,
+                                      'date': 'Today',
+                                      'visits': 1,
+                                      'symptoms': chosenSymptoms,
+                                      'prediction': prediction,
+                                      'severity': severity,
+                                      'onsetDate': onsetDate.toString(),
+                                    });
+                                  });
+                                }
+                              }
+                            },
+                            child: const Text('Save',
+                                style: TextStyle(fontSize: 16)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
     );
+  }
+
+// Helper function to get color based on prediction
+  Color _getPredictionColor(String prediction) {
+    if (prediction.contains('Cholera') || prediction.contains('Severe')) {
+      return Colors.red;
+    } else if (prediction.contains('error') || prediction.contains('fail')) {
+      return Colors.orange;
+    } else {
+      return Colors.blue[700]!;
+    }
   }
 
   void _sendAlert() {
@@ -3126,9 +3747,14 @@ Color _getPredictionColor(String prediction) {
                   decoration: const InputDecoration(labelText: 'Alert Type'),
                   value: alertType,
                   items: const [
-                    DropdownMenuItem(value: 'water_contamination', child: Text('Water Contamination')),
-                    DropdownMenuItem(value: 'disease_outbreak', child: Text('Disease Outbreak')),
-                    DropdownMenuItem(value: 'resource_need', child: Text('Resource Need')),
+                    DropdownMenuItem(
+                        value: 'water_contamination',
+                        child: Text('Water Contamination')),
+                    DropdownMenuItem(
+                        value: 'disease_outbreak',
+                        child: Text('Disease Outbreak')),
+                    DropdownMenuItem(
+                        value: 'resource_need', child: Text('Resource Need')),
                   ],
                   onChanged: (value) => alertType = value!,
                 ),
@@ -3143,9 +3769,13 @@ Color _getPredictionColor(String prediction) {
                   decoration: const InputDecoration(labelText: 'Send To'),
                   value: recipient,
                   items: const [
-                    DropdownMenuItem(value: 'health_official', child: Text('Health Official')),
-                    DropdownMenuItem(value: 'village_leader', child: Text('Village Leader')),
-                    DropdownMenuItem(value: 'community', child: Text('Community')),
+                    DropdownMenuItem(
+                        value: 'health_official',
+                        child: Text('Health Official')),
+                    DropdownMenuItem(
+                        value: 'village_leader', child: Text('Village Leader')),
+                    DropdownMenuItem(
+                        value: 'community', child: Text('Community')),
                   ],
                   onChanged: (value) => recipient = value!,
                 ),
@@ -3163,7 +3793,7 @@ Color _getPredictionColor(String prediction) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Alert sent successfully')),
                 );
-                
+
                 // In a real app, this would call the AlertSystem
                 print('Alert sent: $alertType to $recipient - $message');
               },
@@ -3176,27 +3806,31 @@ Color _getPredictionColor(String prediction) {
   }
 
   void _showProfileDialog() async {
-    final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+    final userDoc =
+        await FirebaseFirestore.instance.collection('users').doc(uid).get();
     final data = userDoc.data();
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           title: const Text('ASHA Worker Profile'),
-          content:  Column(
+          content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: Icon(Icons.person),
-                title: Text(data?['name']),
+                leading: const Icon(Icons.person),
+                title: Text(data?['name'] ?? 'N/A'),
+                subtitle: const Text('Name'),
               ),
               ListTile(
-                leading: Icon(Icons.location_on),
-                title: Text(data?['area']),
+                leading: const Icon(Icons.location_on),
+                title: Text(data?['area'] ?? 'N/A'),
+                subtitle: const Text('Area'),
               ),
               ListTile(
-                leading: Icon(Icons.phone),
-                title: Text(data?['phone']),
+                leading: const Icon(Icons.phone),
+                title: Text(data?['phone'] ?? 'N/A'),
+                subtitle: const Text('Phone'),
               ),
             ],
           ),
@@ -3236,7 +3870,7 @@ Color _getPredictionColor(String prediction) {
                 leading: const Icon(Icons.medical_services),
                 title: Text('Status: ${patient['status']}'),
               ),
-              if (patient['symptoms'] != null) 
+              if (patient['symptoms'] != null)
                 ListTile(
                   leading: const Icon(Icons.warning),
                   title: Text('Symptoms: ${patient['symptoms']}'),
@@ -3254,114 +3888,17 @@ Color _getPredictionColor(String prediction) {
     );
   }
 
-  void _showWaterTestForm() {
-    final _formKey = GlobalKey<FormState>();
-    String waterSource = _waterTests.isNotEmpty ? _waterTests[0]['source'] : '';
-    double phValue = 7.0;
-    double turbidity = 10.0;
-    int bacteriaCount = 0;
-    String notes = '';
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Record Water Test'),
-          content: Form(
-            key: _formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(labelText: 'Water Source'),
-                    value: waterSource,
-                    items: _waterTests.map((test) {
-                      return DropdownMenuItem<String>(
-                        value: test['source'],
-                        child: Text(test['source']),
-                      );
-                    }).toList(),
-                    onChanged: (value) => waterSource = value!,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    decoration: const InputDecoration(labelText: 'pH Level'),
-                    keyboardType: TextInputType.number,
-                    initialValue: phValue.toString(),
-                    onChanged: (value) => phValue = double.tryParse(value) ?? 7.0,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    decoration: const InputDecoration(labelText: 'Turbidity (NTU)'),
-                    keyboardType: TextInputType.number,
-                    initialValue: turbidity.toString(),
-                    onChanged: (value) => turbidity = double.tryParse(value) ?? 10.0,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    decoration: const InputDecoration(labelText: 'Bacteria Count (CFU)'),
-                    keyboardType: TextInputType.number,
-                    initialValue: bacteriaCount.toString(),
-                    onChanged: (value) => bacteriaCount = int.tryParse(value) ?? 0,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    decoration: const InputDecoration(labelText: 'Notes'),
-                    maxLines: 2,
-                    onChanged: (value) => notes = value,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                // Determine status based on values
-                String status = 'Low Risk';
-                if (bacteriaCount > 30 || phValue < 6.0 || phValue > 8.5 || turbidity > 50) {
-                  status = 'High Risk';
-                } else if (bacteriaCount > 10 || phValue < 6.5 || phValue > 8.0 || turbidity > 20) {
-                  status = 'Moderate Risk';
-                }
-
-                setState(() {
-                  _waterTests.insert(0, {
-                    'source': waterSource,
-                    'date': 'Today',
-                    'status': status,
-                    'bacteria': bacteriaCount,
-                    'ph': phValue,
-                    'turbidity': turbidity
-                  });
-                });
-                
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Water test recorded successfully')),
-                );
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   void _generateWeeklyReport() {
     // Generate a simple report
     int totalPatients = userData!['patients'].length;
-    int newCases = userData!['patients'].where((p) => p['status'] == 'New Case').length;
-    int followUpNeeded = _myPatients.where((p) => p['status'] == 'Needs Follow-up').length;
-    
-    int highRiskWaterSources = _waterTests.where((w) => w['status'] == 'High Risk').length;
-    
+    int newCases =
+        userData!['patients'].where((p) => p['status'] == 'New Case').length;
+    int followUpNeeded =
+        _myPatients.where((p) => p['status'] == 'Needs Follow-up').length;
+
+    int highRiskWaterSources =
+        _waterTests.where((w) => w['status'] == 'High Risk').length;
+
     showDialog(
       context: context,
       builder: (context) {
@@ -3428,11 +3965,11 @@ Color _getPredictionColor(String prediction) {
         }
       }
     }
-    
+
     // Sort symptoms by frequency
     var sortedSymptoms = symptomCounts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
-    
+
     showDialog(
       context: context,
       builder: (context) {
@@ -3469,18 +4006,206 @@ Color _getPredictionColor(String prediction) {
       },
     );
   }
-}
 
+  // PDF Generation for ML Predictions
+  Future<void> _generatePredictionPDF() async {
+    final pdf = pw.Document();
+    final patients = userData?['patients'] as List<dynamic>? ?? [];
 
+    // Calculate statistics
+    Map<String, int> predictionCounts = {};
+    int totalPredictions = 0;
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('User Portal')),
-      body: const Center(child: Text('User Portal Screen')),
+    List<Map<String, dynamic>> patientReportData = [];
+
+    for (var p in patients) {
+      final predictions = p['predictions'] as List<dynamic>? ?? [];
+      if (predictions.isNotEmpty) {
+        final lastPrediction = predictions.last;
+        final condition = lastPrediction['prediction'] ?? 'Unknown';
+
+        predictionCounts[condition] = (predictionCounts[condition] ?? 0) + 1;
+        totalPredictions++;
+
+        patientReportData.add({
+          'name': p['name'] ?? 'Unnamed',
+          'village': p['village'] ?? 'Unknown',
+          'condition': condition,
+          'severity': lastPrediction['severity'] ?? 'N/A',
+          'date': lastPrediction['timestamp'] != null
+              ? (lastPrediction['timestamp'] as Timestamp)
+                  .toDate()
+                  .toString()
+                  .split(' ')[0]
+              : 'N/A',
+        });
+      }
+    }
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        build: (pw.Context context) {
+          return [
+            pw.Header(
+              level: 0,
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('NIRAIVIZHI - Health Surveillance System',
+                      style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold, fontSize: 18)),
+                  pw.Text('Date: ${DateTime.now().toString().split(' ')[0]}'),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 20),
+            pw.Text('Overall Prediction Statistics',
+                style:
+                    pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 10),
+            pw.Table(
+              border: pw.TableBorder.all(),
+              children: [
+                pw.TableRow(
+                  decoration: pw.BoxDecoration(color: PdfColors.grey300),
+                  children: [
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(5),
+                        child: pw.Text('Condition',
+                            style:
+                                pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(5),
+                        child: pw.Text('Count',
+                            style:
+                                pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(5),
+                        child: pw.Text('Percentage',
+                            style:
+                                pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                  ],
+                ),
+                ...predictionCounts.entries.map((entry) {
+                  final percentage = totalPredictions > 0
+                      ? (entry.value / totalPredictions * 100)
+                          .toStringAsFixed(1)
+                      : '0';
+                  return pw.TableRow(
+                    children: [
+                      pw.Padding(
+                          padding: const pw.EdgeInsets.all(5),
+                          child: pw.Text(entry.key)),
+                      pw.Padding(
+                          padding: const pw.EdgeInsets.all(5),
+                          child: pw.Text('${entry.value}')),
+                      pw.Padding(
+                          padding: const pw.EdgeInsets.all(5),
+                          child: pw.Text('$percentage%')),
+                    ],
+                  );
+                }).toList(),
+              ],
+            ),
+            pw.SizedBox(height: 30),
+            pw.Text('Detailed Patient Predictions',
+                style:
+                    pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 10),
+            pw.Table(
+              border: pw.TableBorder.all(),
+              children: [
+                pw.TableRow(
+                  decoration: pw.BoxDecoration(color: PdfColors.grey300),
+                  children: [
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(5),
+                        child: pw.Text('Patient Name',
+                            style:
+                                pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(5),
+                        child: pw.Text('Village',
+                            style:
+                                pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(5),
+                        child: pw.Text('Prediction',
+                            style:
+                                pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(5),
+                        child: pw.Text('Severity',
+                            style:
+                                pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                  ],
+                ),
+                ...patientReportData.map((data) {
+                  return pw.TableRow(
+                    children: [
+                      pw.Padding(
+                          padding: const pw.EdgeInsets.all(5),
+                          child: pw.Text(data['name'])),
+                      pw.Padding(
+                          padding: const pw.EdgeInsets.all(5),
+                          child: pw.Text(data['village'])),
+                      pw.Padding(
+                          padding: const pw.EdgeInsets.all(5),
+                          child: pw.Text(data['condition'])),
+                      pw.Padding(
+                          padding: const pw.EdgeInsets.all(5),
+                          child: pw.Text(data['severity'])),
+                    ],
+                  );
+                }).toList(),
+              ],
+            ),
+            pw.Footer(
+              margin: const pw.EdgeInsets.only(top: 20),
+              trailing: pw.Text('Generated by ASHA Worker Portal',
+                  style: pw.TextStyle(color: PdfColors.grey600, fontSize: 10)),
+            ),
+          ];
+        },
+      ),
     );
+
+    await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => pdf.save());
   }
 
+  void _showPredictionReport() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Prediction Statistical Report'),
+          content: const Text(
+              'Generate a PDF report showing the percentage of overall predictions for all your patients?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _generatePredictionPDF();
+              },
+              icon: const Icon(Icons.picture_as_pdf),
+              label: const Text('Generate PDF'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4CAF50),
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
 
 class VillageLeaderDashboard extends StatefulWidget {
   const VillageLeaderDashboard({super.key});
@@ -3493,9 +4218,9 @@ class _VillageLeaderDashboardState extends State<VillageLeaderDashboard> {
   int _currentIndex = 0;
   final PageController _pageController = PageController();
 
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+  final uid = FirebaseAuth.instance.currentUser?.uid;
 
-    Map<String, dynamic>? userData;
+  Map<String, dynamic>? userData;
   bool isLoading = true;
 
   @override
@@ -3506,10 +4231,8 @@ class _VillageLeaderDashboardState extends State<VillageLeaderDashboard> {
 
   Future<void> fetchUserData() async {
     try {
-      DocumentSnapshot doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get();
+      DocumentSnapshot doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
 
       setState(() {
         userData = doc.data() as Map<String, dynamic>?;
@@ -3533,16 +4256,51 @@ class _VillageLeaderDashboardState extends State<VillageLeaderDashboard> {
   };
 
   final List<Map<String, dynamic>> _villageAlerts = [
-    {'type': 'Water', 'message': 'Well water contamination in Sector B', 'priority': 'High', 'date': '2 hours ago'},
-    {'type': 'Health', 'message': 'Increased fever cases in East area', 'priority': 'Medium', 'date': '1 day ago'},
-    {'type': 'Infrastructure', 'message': 'Water pump repair needed in Sector C', 'priority': 'Medium', 'date': '2 days ago'},
+    {
+      'type': 'Water',
+      'message': 'Well water contamination in Sector B',
+      'priority': 'High',
+      'date': '2 hours ago'
+    },
+    {
+      'type': 'Health',
+      'message': 'Increased fever cases in East area',
+      'priority': 'Medium',
+      'date': '1 day ago'
+    },
+    {
+      'type': 'Infrastructure',
+      'message': 'Water pump repair needed in Sector C',
+      'priority': 'Medium',
+      'date': '2 days ago'
+    },
   ];
 
   final List<Map<String, dynamic>> _waterSources = [
-    {'name': 'Village Well', 'status': 'Contaminated', 'lastTest': 'Today', 'risk': 'High'},
-    {'name': 'River Point', 'status': 'Safe', 'lastTest': '2 days ago', 'risk': 'Low'},
-    {'name': 'Hand Pump 1', 'status': 'Safe', 'lastTest': '3 days ago', 'risk': 'Low'},
-    {'name': 'Hand Pump 2', 'status': 'Moderate', 'lastTest': '1 week ago', 'risk': 'Medium'},
+    {
+      'name': 'Village Well',
+      'status': 'Contaminated',
+      'lastTest': 'Today',
+      'risk': 'High'
+    },
+    {
+      'name': 'River Point',
+      'status': 'Safe',
+      'lastTest': '2 days ago',
+      'risk': 'Low'
+    },
+    {
+      'name': 'Hand Pump 1',
+      'status': 'Safe',
+      'lastTest': '3 days ago',
+      'risk': 'Low'
+    },
+    {
+      'name': 'Hand Pump 2',
+      'status': 'Moderate',
+      'lastTest': '1 week ago',
+      'risk': 'Medium'
+    },
   ];
 
   // Function to go back to portal selection
@@ -3554,462 +4312,505 @@ class _VillageLeaderDashboardState extends State<VillageLeaderDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    return ResponsiveLayout(
+      mobile: _buildScaffold(context, true),
+      tablet: _buildScaffold(context, false),
+      web: _buildScaffold(context, false),
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context, bool isMobile) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(
-          'NIRAIVIZHI - VILLAGE LEADER DASHBOARD',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(gradient: AppDesign.primaryGradient),
         ),
-        backgroundColor: const Color(0xFFFF9800),
-        foregroundColor: Colors.white,
+        title: Text(
+          'VILLAGE LEADER',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.5,
+            color: Colors.white,
+          ),
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications),
-            onPressed: () {
-              _showVillageAlertsDialog();
-            },
+            icon: const Icon(Icons.notifications_outlined, color: Colors.white),
+            onPressed: () => _showVillageAlertsDialog(),
           ),
           IconButton(
-            icon: const Icon(Icons.map),
-            onPressed: () {
-              _showVillageMap();
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.arrow_back),
+            icon: const Icon(Icons.logout_rounded, color: Colors.white),
             onPressed: _goBackToPortal,
           ),
         ],
+        elevation: 0,
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFFFF8E1),
-              Color(0xFFFFECB3),
-              Color(0xFFFFE082),
-            ],
-          ),
+      body: PageView(
+        controller: _pageController,
+        onPageChanged: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        children: [
+          _buildVillageDashboard(),
+          _buildWaterManagementTab(),
+          _buildAlertsTab(),
+          _buildCommunityTab(),
+        ],
+      ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -5),
+            ),
+          ],
         ),
-        child: PageView(
-          controller: _pageController,
-          onPageChanged: (index) {
+        child: BottomNavigationBar(
+          currentIndex: _currentIndex,
+          onTap: (index) {
             setState(() {
               _currentIndex = index;
+              _pageController.animateToPage(
+                index,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              );
             });
           },
-          children: [
-            _buildVillageDashboard(),
-            _buildWaterManagementTab(),
-            _buildAlertsTab(),
-            _buildCommunityTab(),
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: Colors.white,
+          selectedItemColor: AppDesign.electricBlue,
+          unselectedItemColor: Colors.grey,
+          selectedLabelStyle:
+              GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 12),
+          unselectedLabelStyle: GoogleFonts.poppins(fontSize: 12),
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.dashboard_rounded),
+              label: 'Overview',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.water_drop_rounded),
+              label: 'Water',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.notification_important_rounded),
+              label: 'Alerts',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.people_alt_rounded),
+              label: 'Community',
+            ),
           ],
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-            _pageController.jumpToPage(index);
-          });
-        },
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFFFF9800),
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.water_drop),
-            label: 'Water',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.warning),
-            label: 'Alerts',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people),
-            label: 'Community',
-          ),
-        ],
-      ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          _showVillageQuickActions();
-        },
-        backgroundColor: const Color(0xFFFF9800),
-        child: const Icon(Icons.add, color: Colors.white),
+        onPressed: () => _showVillageQuickActions(),
+        backgroundColor: AppDesign.electricBlue,
+        child: Container(
+          width: 60,
+          height: 60,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: AppDesign.accentGradient,
+          ),
+          child: const Icon(Icons.add, color: Colors.white),
+        ),
       ),
     );
   }
 
   Widget _buildVillageDashboard() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Village Overview',
-            style: GoogleFonts.poppins(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: const Color(0xFFEF6C00),
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildVillageStats(),
-          const SizedBox(height: 24),
-          Text(
-            'Active Alerts',
-            style: GoogleFonts.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: const Color(0xFFEF6C00),
-            ),
-          ),
+          _buildPremiumHeader(),
+          const SizedBox(height: 30),
+          _buildVillageStatsGrid(),
+          const SizedBox(height: 32),
+          _buildSectionHeader(
+              'Recent Alerts', Icons.notification_important_rounded),
           const SizedBox(height: 16),
           _buildActiveAlerts(),
-          const SizedBox(height: 24),
-          Text(
-            'Water Source Status',
-            style: GoogleFonts.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: const Color(0xFFEF6C00),
-            ),
-          ),
+          const SizedBox(height: 32),
+          _buildSectionHeader('Water Sources', Icons.water_drop_rounded),
           const SizedBox(height: 16),
-          _buildWaterSourceStatus(),
-          const SizedBox(height: 24),
-          Text(
-            'Quick Actions',
-            style: GoogleFonts.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: const Color(0xFFEF6C00),
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildVillageQuickActions(),
+          _buildWaterSourceStatusList(),
         ],
       ),
     );
   }
-Future<Map<String, dynamic>> _fetchVillageStats() async {
-  try {
-    // Fetch ASHA workers count
-    final ashaWorkersQuery = await FirebaseFirestore.instance
-        .collection('users')
-        .where('village', isEqualTo: userData?['villageName'] ?? '')
-        .where('role', isEqualTo: 'asha_worker')
-        .get();
-    
-    final ashaWorkersCount = ashaWorkersQuery.docs.length;
-    
-    // You can add more queries here for other statistics
-    
-    return {
-      'ashaWorkers': ashaWorkersCount,
-      // Add other stats here
-    };
-  } catch (e) {
-    print('Error fetching village stats: $e');
-    return {'ashaWorkers': 0};
-  }
-}
 
-
-
-
-Widget _buildVillageStats() {
-  final population = userData?['population']?.toString() ?? 'N/A';
-  final houseHolds = userData?['houseHolds']?.toString() ?? 'N/A';
-  
-  return FutureBuilder<Map<String, dynamic>>(
-    future: _fetchVillageStats(),
-    builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting) {
-        return const Center(child: CircularProgressIndicator());
-      }
-      
-      if (snapshot.hasError) {
-        return Center(child: Text('Error: ${snapshot.error}'));
-      }
-      
-      final stats = snapshot.data ?? {};
-      final ashaWorkersCount = stats['ashaWorkers'] ?? 0;
-      
-      return GridView.count(
-        crossAxisCount: 2,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        childAspectRatio: 1.5,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        children: [
-          _buildStatCard('Population', population, Icons.people, const Color(0xFFFF9800)),
-          _buildStatCard('Households', houseHolds, Icons.home, const Color(0xFF2196F3)),
-          _buildStatCard('Water Sources', '6', Icons.water_drop, const Color(0xFF4CAF50)),
-          _buildStatCard('Health Workers', '$ashaWorkersCount', Icons.medical_services, const Color(0xFFF44336)),
-        ],
-      );
-    },
-  );
-}
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+  Widget _buildPremiumHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: color, size: 32),
-            const SizedBox(height: 8),
             Text(
-              value,
-              style: GoogleFonts.poppins(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.black,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
+              'Welcome back,',
               style: GoogleFonts.poppins(
                 fontSize: 14,
                 color: Colors.grey[600],
               ),
-              textAlign: TextAlign.center,
+            ),
+            Text(
+              userData?['name'] ?? 'Village Leader',
+              style: GoogleFonts.poppins(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: AppDesign.primaryNavy,
+              ),
             ),
           ],
         ),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppDesign.electricBlue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: const Icon(Icons.house_rounded, color: AppDesign.electricBlue),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: AppDesign.electricBlue, size: 20),
+        const SizedBox(width: 10),
+        Text(
+          title,
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppDesign.primaryNavy,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVillageStatsGrid() {
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      crossAxisSpacing: 16,
+      mainAxisSpacing: 16,
+      childAspectRatio: 1.4,
+      children: [
+        _buildStatCard('Population', _villageStats['population'].toString(),
+            Icons.people_rounded, AppDesign.electricBlue),
+        _buildStatCard('Households', _villageStats['households'].toString(),
+            Icons.home_work_rounded, AppDesign.aquaCyan),
+        _buildStatCard(
+            'Water Sources',
+            _villageStats['waterSources'].toString(),
+            Icons.water_rounded,
+            AppDesign.deepTeal),
+        _buildStatCard(
+            'Health Workers',
+            _villageStats['healthWorkers'].toString(),
+            Icons.medication_rounded,
+            Colors.orange),
+      ],
+    );
+  }
+
+  Widget _buildStatCard(
+      String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(color: color.withOpacity(0.05)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Icon(icon, color: color, size: 24),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: AppDesign.primaryNavy,
+                ),
+              ),
+              Text(
+                label,
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildActiveAlerts() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            for (var alert in _villageAlerts)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: ListTile(
-                  leading: Icon(
-                    Icons.warning,
-                    color: alert['priority'] == 'High' ? Colors.red : Colors.orange,
-                  ),
-                  title: Text(
-                    alert['message'],
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Text(
-                    '${alert['type']} • ${alert['date']}',
-                    style: GoogleFonts.poppins(),
-                  ),
-                  trailing: Chip(
-                    label: Text(
-                      alert['priority'],
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                    backgroundColor: alert['priority'] == 'High' ? Colors.red : Colors.orange,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWaterSourceStatus() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            for (var source in _waterSources)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: ListTile(
-                  leading: const Icon(Icons.water_drop, color: Color(0xFF2196F3)),
-                  title: Text(
-                    source['name'],
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Text(
-                    'Last tested: ${source['lastTest']}',
-                    style: GoogleFonts.poppins(),
-                  ),
-                  trailing: Chip(
-                    label: Text(
-                      source['risk'],
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                    backgroundColor: source['risk'] == 'High'
-                        ? Colors.red
-                        : source['risk'] == 'Medium'
-                        ? Colors.orange
-                        : Colors.green,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildVillageQuickActions() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
-      children: [
-        _buildActionButton(Icons.warning, 'New Alert', () {
-          _createNewAlert();
-        }, const Color(0xFFFF9800)),
-        _buildActionButton(Icons.campaign, 'Announcement', () {
-          _makeAnnouncement();
-        }, const Color(0xFF2196F3)),
-        _buildActionButton(Icons.meeting_room, 'Call Meeting', () {
-          _callCommunityMeeting();
-        }, const Color(0xFF4CAF50)),
-        _buildActionButton(Icons.notifications, 'Send Alert', () {
-          _showVillageAlertDialog();
-        }, Colors.blue),
-      ],
-    );
-  }
-
-  Widget _buildActionButton(IconData icon, String label, VoidCallback onPressed, Color color) {
     return Column(
-      children: [
-        IconButton(
-          icon: Icon(icon),
-          onPressed: onPressed,
-          style: IconButton.styleFrom(
-            backgroundColor: color,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.all(16),
+      children: _villageAlerts.map((alert) => _buildAlertItem(alert)).toList(),
+    );
+  }
+
+  Widget _buildAlertItem(Map<String, dynamic> alert) {
+    Color priorityColor =
+        alert['priority'] == 'High' ? Colors.red : Colors.orange;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.grey[100]!),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: GoogleFonts.poppins(fontSize: 12),
-          textAlign: TextAlign.center,
-        ),
-      ],
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: priorityColor.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              alert['type'] == 'Water' ? Icons.water_drop : Icons.warning_amber,
+              color: priorityColor,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  alert['message'],
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 13,
+                    color: AppDesign.primaryNavy,
+                  ),
+                ),
+                Text(
+                  alert['date'],
+                  style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: priorityColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              alert['priority'],
+              style: GoogleFonts.poppins(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: priorityColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWaterSourceStatusList() {
+    return Column(
+      children:
+          _waterSources.map((source) => _buildWaterSourceCard(source)).toList(),
+    );
+  }
+
+  Widget _buildWaterSourceCard(Map<String, dynamic> source) {
+    Color statusColor = source['status'] == 'Safe'
+        ? Colors.green
+        : (source['status'] == 'Moderate' ? Colors.orange : Colors.red);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.grey[100]!),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: statusColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.water_rounded, color: statusColor),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  source['name'],
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold,
+                    color: AppDesign.primaryNavy,
+                  ),
+                ),
+                Text(
+                  'Last Test: ${source['lastTest']}',
+                  style: GoogleFonts.poppins(
+                      fontSize: 12, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                source['status'],
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  color: statusColor,
+                  fontSize: 14,
+                ),
+              ),
+              Text(
+                '${source['risk']} Risk',
+                style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildWaterManagementTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _buildSectionHeader('Water Management', Icons.water_drop_rounded),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: AppDesign.primaryGradient,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: AppDesign.primaryNavy.withOpacity(0.2),
+                  blurRadius: 15,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child:
+                      const Icon(Icons.analytics_rounded, color: Colors.white),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Resource Analytics',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text(
+                        'Monitor water quality trends and supply levels',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 30),
           Text(
-            'Water Resource Management',
+            'Village Water Sources',
             style: GoogleFonts.poppins(
-              fontSize: 22,
+              fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: const Color(0xFFEF6C00),
+              color: AppDesign.primaryNavy,
             ),
           ),
           const SizedBox(height: 16),
+          _buildWaterSourceStatusList(),
+          const SizedBox(height: 20),
           Center(
-            child: Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Icon(Icons.water_drop, size: 50, color: Color(0xFF2196F3)),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Water Source Management',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Monitor and manage village water sources',
-                      style: GoogleFonts.poppins(),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _manageWaterSources();
-                      },
-                      icon: const Icon(Icons.manage_accounts),
-                      label: const Text('Manage Sources'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFF9800),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                  ],
-                ),
+            child: ElevatedButton.icon(
+              onPressed: () => _manageWaterSources(),
+              icon: const Icon(Icons.settings_suggest_rounded),
+              label: const Text('Configure Sources'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppDesign.primaryNavy,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 15),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ),
-          const SizedBox(height: 24),
-          Text(
-            'Water Source Status',
-            style: GoogleFonts.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: const Color(0xFFEF6C00),
-            ),
-          ),
-          const SizedBox(height: 16),
-          ..._waterSources.map((source) => Card(
-            elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            margin: const EdgeInsets.only(bottom: 16),
-            child: ListTile(
-              leading: const Icon(Icons.water_drop, color: Color(0xFF2196F3)),
-              title: Text(
-                source['name'],
-                style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Text(
-                'Status: ${source['status']} • Last tested: ${source['lastTest']}',
-                style: GoogleFonts.poppins(),
-              ),
-              trailing: Chip(
-                label: Text(
-                  source['risk'],
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                ),
-                backgroundColor: source['risk'] == 'High'
-                    ? Colors.red
-                    : source['risk'] == 'Medium'
-                    ? Colors.orange
-                    : Colors.green,
-              ),
-            ),
-          )).toList(),
         ],
       ),
     );
@@ -4017,96 +4818,65 @@ Widget _buildVillageStats() {
 
   Widget _buildAlertsTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _buildSectionHeader(
+              'Emergency Notifications', Icons.campaign_rounded),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: AppDesign.accentGradient,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  'Critical Alert Broadcast',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Instantly notify all community members about urgent water or health issues.',
+                  style:
+                      GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: () => _sendEmergencyAlert(),
+                  icon: const Icon(Icons.notification_important_rounded),
+                  label: const Text('Broadcast Alert Now'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.red[700],
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
           Text(
-            'Village Alerts & Notifications',
+            'Alert History',
             style: GoogleFonts.poppins(
-              fontSize: 22,
+              fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: const Color(0xFFEF6C00),
+              color: AppDesign.primaryNavy,
             ),
           ),
           const SizedBox(height: 16),
-          Center(
-            child: Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Icon(Icons.warning, size: 50, color: Colors.orange),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Emergency Alert System',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Send alerts to community members',
-                      style: GoogleFonts.poppins(),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _sendEmergencyAlert();
-                      },
-                      icon: const Icon(Icons.notification_important),
-                      label: const Text('Send Alert'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Recent Alerts',
-            style: GoogleFonts.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: const Color(0xFFEF6C00),
-            ),
-          ),
-          const SizedBox(height: 16),
-          ..._villageAlerts.map((alert) => Card(
-            elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            margin: const EdgeInsets.only(bottom: 16),
-            child: ListTile(
-              leading: Icon(
-                Icons.warning,
-                color: alert['priority'] == 'High' ? Colors.red : Colors.orange,
-              ),
-              title: Text(
-                alert['message'],
-                style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Text(
-                '${alert['type']} • ${alert['date']}',
-                style: GoogleFonts.poppins(),
-              ),
-              trailing: Chip(
-                label: Text(
-                  alert['priority'],
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                ),
-                backgroundColor: alert['priority'] == 'High' ? Colors.red : Colors.orange,
-              ),
-            ),
-          )).toList(),
+          _buildActiveAlerts(),
         ],
       ),
     );
@@ -4114,103 +4884,197 @@ Widget _buildVillageStats() {
 
   Widget _buildCommunityTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _buildSectionHeader('Community Connect', Icons.groups_rounded),
+          const SizedBox(height: 20),
+          _buildCommunityActionCard(
+            'Water Samiti Meeting',
+            'Schedule a discussion with local water committee members.',
+            Icons.calendar_month_rounded,
+            AppDesign.primaryNavy,
+            () => _scheduleMeeting(),
+          ),
+          const SizedBox(height: 16),
+          _buildCommunityActionCard(
+            'Health Worker Directory',
+            'Contact ASHA workers and health officials in your village.',
+            Icons.contact_phone_rounded,
+            AppDesign.electricBlue,
+            () => _showWorkerDirectory(),
+          ),
+          const SizedBox(height: 32),
           Text(
-            'Community Management',
+            'Recent Announcements',
             style: GoogleFonts.poppins(
-              fontSize: 22,
+              fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: const Color(0xFFEF6C00),
+              color: AppDesign.primaryNavy,
             ),
           ),
           const SizedBox(height: 16),
-          Center(
-            child: Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Icon(Icons.people, size: 50, color: Color(0xFF4CAF50)),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Community Meetings',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Schedule and manage community gatherings',
-                      style: GoogleFonts.poppins(),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _scheduleMeeting();
-                      },
-                      icon: const Icon(Icons.calendar_today),
-                      label: const Text('Schedule Meeting'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFF9800),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          _buildAnnouncementItem(
+            'Weekly Well Cleaning',
+            'Sector B well cleaning scheduled for this Sunday at 8 AM.',
+            'Yesterday',
           ),
-          const SizedBox(height: 24),
-          Center(
-            child: Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Icon(Icons.campaign, size: 50, color: Color(0xFF2196F3)),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Community Announcements',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Make important announcements to the village',
-                      style: GoogleFonts.poppins(),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _makeAnnouncement();
-                      },
-                      icon: const Icon(Icons.campaign),
-                      label: const Text('Make Announcement'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2196F3),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          _buildAnnouncementItem(
+            'Health Camp Reminder',
+            'Free health checkup camp at the Primary Health Center next Tuesday.',
+            '2 days ago',
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCommunityActionCard(String title, String subtitle, IconData icon,
+      Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.1)),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.bold,
+                      color: AppDesign.primaryNavy,
+                      fontSize: 15,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.poppins(
+                      color: Colors.grey[600],
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: Colors.grey[400]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnnouncementItem(String title, String message, String time) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppDesign.glassWhite.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.grey[100]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  color: AppDesign.primaryNavy,
+                  fontSize: 14,
+                ),
+              ),
+              Text(
+                time,
+                style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            message,
+            style: GoogleFonts.poppins(color: Colors.grey[700], fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showWorkerDirectory() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Health Worker Directory',
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppDesign.primaryNavy,
+              ),
+            ),
+            const SizedBox(height: 20),
+            _buildDirectoryItem('Priya Sharma', 'ASHA Worker', '9876543210'),
+            _buildDirectoryItem(
+                'Dr. Amit Verma', 'Medical Officer', '9876543211'),
+            _buildDirectoryItem(
+                'Suresh Kumar', 'Sanitation Lead', '9876543212'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDirectoryItem(String name, String role, String phone) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(
+        backgroundColor: AppDesign.electricBlue.withOpacity(0.1),
+        child: Text(name[0],
+            style: const TextStyle(color: AppDesign.electricBlue)),
+      ),
+      title:
+          Text(name, style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+      subtitle: Text(role, style: GoogleFonts.poppins(fontSize: 12)),
+      trailing: IconButton(
+        icon: const Icon(Icons.phone_rounded, color: Colors.green),
+        onPressed: () => launchUrl(Uri.parse('tel:$phone')),
       ),
     );
   }
@@ -4231,7 +5095,9 @@ Widget _buildVillageStats() {
                       ListTile(
                         leading: Icon(
                           Icons.warning,
-                          color: alert['priority'] == 'High' ? Colors.red : Colors.orange,
+                          color: alert['priority'] == 'High'
+                              ? Colors.red
+                              : Colors.orange,
                         ),
                         title: Text(alert['message']),
                         subtitle: Text('${alert['type']} • ${alert['date']}'),
@@ -4239,45 +5105,6 @@ Widget _buildVillageStats() {
                       const Divider(),
                     ],
                   ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('Close'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showVillageMap() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Village Map'),
-          content: SizedBox(
-            width: 300,
-            height: 300,
-            child: Column(
-              children: [
-                const Icon(Icons.map, size: 100, color: Colors.blue),
-                const SizedBox(height: 16),
-                const Text('Interactive village map showing:'),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    Chip(label: Text('${_villageStats['waterSources']} Water Sources')),
-                    Chip(label: Text('${_villageStats['healthWorkers']} Health Workers')),
-                    Chip(label: Text('${_villageAlerts.length} Active Alerts')),
-                  ],
-                ),
               ],
             ),
           ),
@@ -4372,9 +5199,9 @@ Widget _buildVillageStats() {
                   value: selectedType,
                   items: ['General', 'Water', 'Health', 'Infrastructure']
                       .map((type) => DropdownMenuItem(
-                    value: type,
-                    child: Text(type),
-                  ))
+                            value: type,
+                            child: Text(type),
+                          ))
                       .toList(),
                   onChanged: (value) {
                     selectedType = value!;
@@ -4389,9 +5216,9 @@ Widget _buildVillageStats() {
                   value: selectedPriority,
                   items: ['Low', 'Medium', 'High']
                       .map((priority) => DropdownMenuItem(
-                    value: priority,
-                    child: Text(priority),
-                  ))
+                            value: priority,
+                            child: Text(priority),
+                          ))
                       .toList(),
                   onChanged: (value) {
                     selectedPriority = value!;
@@ -4424,7 +5251,8 @@ Widget _buildVillageStats() {
                   });
                   Navigator.of(context).pop();
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Alert created successfully!')),
+                    const SnackBar(
+                        content: Text('Alert created successfully!')),
                   );
                 }
               },
@@ -4437,7 +5265,8 @@ Widget _buildVillageStats() {
   }
 
   void _makeAnnouncement() {
-    final TextEditingController announcementController = TextEditingController();
+    final TextEditingController announcementController =
+        TextEditingController();
 
     showDialog(
       context: context,
@@ -4465,7 +5294,8 @@ Widget _buildVillageStats() {
                   Navigator.of(context).pop();
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Announcement sent: ${announcementController.text}'),
+                      content: Text(
+                          'Announcement sent: ${announcementController.text}'),
                       duration: const Duration(seconds: 3),
                     ),
                   );
@@ -4504,7 +5334,8 @@ Widget _buildVillageStats() {
                 ListTile(
                   leading: const Icon(Icons.calendar_today),
                   title: const Text('Select Date'),
-                  subtitle: Text('${selectedDate.day}/${selectedDate.month}/${selectedDate.year}'),
+                  subtitle: Text(
+                      '${selectedDate.day}/${selectedDate.month}/${selectedDate.year}'),
                   onTap: () async {
                     final DateTime? pickedDate = await showDatePicker(
                       context: context,
@@ -4547,7 +5378,8 @@ Widget _buildVillageStats() {
                   Navigator.of(context).pop();
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Meeting scheduled: ${meetingController.text} on ${selectedDate.day}/${selectedDate.month}/${selectedDate.year} at ${selectedTime.format(context)}'),
+                      content: Text(
+                          'Meeting scheduled: ${meetingController.text} on ${selectedDate.day}/${selectedDate.month}/${selectedDate.year} at ${selectedTime.format(context)}'),
                       duration: const Duration(seconds: 3),
                     ),
                   );
@@ -4609,7 +5441,8 @@ Widget _buildVillageStats() {
   }
 
   void _editWaterSource(Map<String, dynamic> source) {
-    final TextEditingController nameController = TextEditingController(text: source['name']);
+    final TextEditingController nameController =
+        TextEditingController(text: source['name']);
     String selectedStatus = source['status'];
     String selectedRisk = source['risk'];
 
@@ -4634,9 +5467,9 @@ Widget _buildVillageStats() {
                   value: selectedStatus,
                   items: ['Safe', 'Moderate', 'Contaminated']
                       .map((status) => DropdownMenuItem(
-                    value: status,
-                    child: Text(status),
-                  ))
+                            value: status,
+                            child: Text(status),
+                          ))
                       .toList(),
                   onChanged: (value) {
                     selectedStatus = value!;
@@ -4651,9 +5484,9 @@ Widget _buildVillageStats() {
                   value: selectedRisk,
                   items: ['Low', 'Medium', 'High']
                       .map((risk) => DropdownMenuItem(
-                    value: risk,
-                    child: Text(risk),
-                  ))
+                            value: risk,
+                            child: Text(risk),
+                          ))
                       .toList(),
                   onChanged: (value) {
                     selectedRisk = value!;
@@ -4720,9 +5553,9 @@ Widget _buildVillageStats() {
                   value: selectedStatus,
                   items: ['Safe', 'Moderate', 'Contaminated']
                       .map((status) => DropdownMenuItem(
-                    value: status,
-                    child: Text(status),
-                  ))
+                            value: status,
+                            child: Text(status),
+                          ))
                       .toList(),
                   onChanged: (value) {
                     selectedStatus = value!;
@@ -4737,9 +5570,9 @@ Widget _buildVillageStats() {
                   value: selectedRisk,
                   items: ['Low', 'Medium', 'High']
                       .map((risk) => DropdownMenuItem(
-                    value: risk,
-                    child: Text(risk),
-                  ))
+                            value: risk,
+                            child: Text(risk),
+                          ))
                       .toList(),
                   onChanged: (value) {
                     selectedRisk = value!;
@@ -4810,9 +5643,9 @@ Widget _buildVillageStats() {
                   value: selectedPriority,
                   items: ['High', 'Medium']
                       .map((priority) => DropdownMenuItem(
-                    value: priority,
-                    child: Text(priority),
-                  ))
+                            value: priority,
+                            child: Text(priority),
+                          ))
                       .toList(),
                   onChanged: (value) {
                     selectedPriority = value!;
@@ -4860,119 +5693,14 @@ Widget _buildVillageStats() {
   void _scheduleMeeting() {
     _callCommunityMeeting(); // Reuse the same functionality
   }
-
-  void _showVillageAlertDialog() {
-    final Map<String, String> alertTemplates = AlertSystem.getAlertTemplates('village_leader');
-    String selectedTemplate = alertTemplates.keys.first;
-    String customMessage = '';
-    String selectedChannel = 'SMS';
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Send Community Alert'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DropdownButtonFormField<String>(
-                      value: selectedTemplate,
-                      items: alertTemplates.keys.map((String key) {
-                        return DropdownMenuItem<String>(
-                          value: key,
-                          child: Text(key.replaceAll('_', ' ')),
-                        );
-                      }).toList(),
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          selectedTemplate = newValue!;
-                        });
-                      },
-                      decoration: const InputDecoration(labelText: 'Alert Type'),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      decoration: const InputDecoration(
-                        labelText: 'Custom Message (optional)',
-                        border: OutlineInputBorder(),
-                      ),
-                      maxLines: 3,
-                      onChanged: (value) {
-                        customMessage = value;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      value: selectedChannel,
-                      items: ['SMS', 'WhatsApp', 'IVR Call'].map((String channel) {
-                        return DropdownMenuItem<String>(
-                          value: channel,
-                          child: Text(channel),
-                        );
-                      }).toList(),
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          selectedChannel = newValue!;
-                        });
-                      },
-                      decoration: const InputDecoration(labelText: 'Channel'),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    String message = customMessage.isNotEmpty
-                        ? customMessage
-                        : alertTemplates[selectedTemplate]!;
-
-                    // In a real app, you would have a list of community members' numbers
-                    List<String> communityNumbers = ['+911234567890', '+919876543210'];
-
-                    try {
-                      for (String number in communityNumbers) {
-                        if (selectedChannel == 'SMS') {
-                          await AlertSystem.sendSMS(message, number);
-                        } else if (selectedChannel == 'WhatsApp') {
-                          await AlertSystem.sendWhatsApp(message, number);
-                        } else if (selectedChannel == 'IVR Call') {
-                          await AlertSystem.makeCall(number);
-                        }
-                      }
-
-                      Navigator.of(context).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Alert sent to community via $selectedChannel')),
-                      );
-                    } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Failed to send alert: $e')),
-                      );
-                    }
-                  },
-                  child: const Text('Send to Community'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
 }
+
 class HealthOfficialDashboard extends StatefulWidget {
   const HealthOfficialDashboard({super.key});
 
   @override
-  State<HealthOfficialDashboard> createState() => _HealthOfficialDashboardState();
+  State<HealthOfficialDashboard> createState() =>
+      _HealthOfficialDashboardState();
 }
 
 class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
@@ -5034,357 +5762,451 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
   int _nextOutbreakId = 4;
 
   @override
-// ---------- UI ----------
-  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-// Navigate back to portal selection screen
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => const UserPortalScreen()),
-            );
-          },
-        ),
-        title: Text(
-          'NIRAIVIZHI - Health Official Portal',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: const Color(0xFF9C27B0),
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications),
-            onPressed: () {
-              _showHealthAlertsDialog();
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.analytics),
-            onPressed: () {
-              _showAdvancedAnalytics();
-            },
-          ),
-        ],
+    return ResponsiveLayout(
+      mobile: Scaffold(
+        drawer: _buildHealthDrawer(),
+        appBar: _buildHealthAppBar(),
+        body: _buildHealthBody(),
+        bottomNavigationBar: _buildHealthBottomNav(),
+        floatingActionButton: _buildHealthFAB(),
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFF3E5F5),
-              Color(0xFFE1BEE7),
-              Color(0xFFCE93D8),
-            ],
-          ),
-        ),
-        child: PageView(
-          controller: _pageController,
-          onPageChanged: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-          },
+      tablet: Scaffold(
+        appBar: _buildHealthAppBar(),
+        body: Row(
           children: [
-            _buildHealthDashboard(),
-            _buildOutbreaksTab(),
-            _buildResourcesTab(),
-            _buildAnalyticsTab(),
+            _buildHealthNavRail(),
+            Expanded(child: _buildHealthBody()),
           ],
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-            _pageController.jumpToPage(index);
-          });
-        },
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFF9C27B0),
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.warning),
-            label: 'Outbreaks',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.inventory),
-            label: 'Resources',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.analytics),
-            label: 'Analytics',
+      web: Scaffold(
+        appBar: _buildHealthAppBar(),
+        body: Row(
+          children: [
+            _buildHealthNavRail(extended: true),
+            Expanded(child: _buildHealthBody()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildHealthAppBar() {
+    return AppBar(
+      elevation: 0,
+      backgroundColor: Colors.white,
+      foregroundColor: AppDesign.primaryNavy,
+      title: Text(
+        'District Health Monitor',
+        style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18),
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.notifications_none_rounded),
+          onPressed: () => _showHealthAlertsDialog(),
+        ),
+        const SizedBox(width: 8),
+      ],
+    );
+  }
+
+  Widget _buildHealthBody() {
+    return PageView(
+      controller: _pageController,
+      onPageChanged: (index) => setState(() => _currentIndex = index),
+      children: [
+        _buildHealthDashboard(),
+        _buildOutbreaksTab(),
+        _buildResourcesTab(),
+        _buildAnalyticsTab(),
+      ],
+    );
+  }
+
+  Widget _buildHealthBottomNav() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -5),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          _showHealthQuickActions();
+      child: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() => _currentIndex = index);
+          _pageController.animateToPage(index,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut);
         },
-        backgroundColor: const Color(0xFF9C27B0),
-        child: const Icon(Icons.add, color: Colors.white),
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: Colors.white,
+        selectedItemColor: AppDesign.electricBlue,
+        unselectedItemColor: Colors.grey[400],
+        selectedLabelStyle:
+            GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold),
+        unselectedLabelStyle: GoogleFonts.poppins(fontSize: 12),
+        elevation: 0,
+        items: const [
+          BottomNavigationBarItem(
+              icon: Icon(Icons.dashboard_customize_rounded), label: 'District'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.coronavirus_rounded), label: 'Outbreaks'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.inventory_2_rounded), label: 'Logistics'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.insights_rounded), label: 'Data'),
+        ],
       ),
+    );
+  }
+
+  Widget _buildHealthFAB() {
+    return FloatingActionButton(
+      onPressed: () => _showHealthQuickActions(),
+      backgroundColor: AppDesign.electricBlue,
+      elevation: 4,
+      child: const Icon(Icons.add_rounded, color: Colors.white),
+    );
+  }
+
+  Widget _buildHealthDrawer() {
+    return Drawer(
+      child: Column(
+        children: [
+          DrawerHeader(
+            decoration:
+                const BoxDecoration(gradient: AppDesign.primaryGradient),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.health_and_safety_rounded,
+                      color: Colors.white, size: 48),
+                  const SizedBox(height: 12),
+                  Text(
+                    'District Health Portal',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.person_outline_rounded),
+            title: const Text('District Profile'),
+            onTap: () {},
+          ),
+          ListTile(
+            leading: const Icon(Icons.settings_outlined),
+            title: const Text('System Settings'),
+            onTap: () {},
+          ),
+          const Spacer(),
+          ListTile(
+            leading: const Icon(Icons.logout_rounded, color: Colors.red),
+            title: const Text('Switch Portal',
+                style: TextStyle(color: Colors.red)),
+            onTap: () => Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (context) => const UserPortalScreen()),
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHealthNavRail({bool extended = false}) {
+    return NavigationRail(
+      extended: extended,
+      selectedIndex: _currentIndex,
+      onDestinationSelected: (index) {
+        setState(() => _currentIndex = index);
+        _pageController.animateToPage(index,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut);
+      },
+      leading: extended
+          ? Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Text(
+                'NIRAIVIZHI',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 24,
+                  color: AppDesign.electricBlue,
+                ),
+              ),
+            )
+          : const Icon(Icons.health_and_safety_rounded,
+              color: AppDesign.electricBlue),
+      destinations: const [
+        NavigationRailDestination(
+            icon: Icon(Icons.dashboard_rounded), label: Text('Overview')),
+        NavigationRailDestination(
+            icon: Icon(Icons.warning_rounded), label: Text('Outbreaks')),
+        NavigationRailDestination(
+            icon: Icon(Icons.inventory_rounded), label: Text('Resources')),
+        NavigationRailDestination(
+            icon: Icon(Icons.analytics_rounded), label: Text('Analytics')),
+      ],
     );
   }
 
 // ---------- Dashboard Page ----------
   Widget _buildHealthDashboard() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Center(
-        child: Column(
-          children: [
-            Text(
-              'District Health Overview',
-              style: GoogleFonts.poppins(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF7B1FA2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildDistrictStats(),
-            const SizedBox(height: 24),
-            Text(
-              'Active Outbreak Alerts',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF7B1FA2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildOutbreakAlerts(),
-            const SizedBox(height: 24),
-            Text(
-              'Resource Status',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF7B1FA2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildResourceStatus(),
-            const SizedBox(height: 24),
-            Text(
-              'Quick Actions',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF7B1FA2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildHealthQuickActions(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDistrictStats() {
-    return Center(
-      child: GridView.count(
-        crossAxisCount: 2,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        childAspectRatio: 1.5,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildStatCard('Villages', '${_districtStats['villages']}', Icons.location_city, const Color(0xFF9C27B0)),
-          _buildStatCard('Population', '${_districtStats['population']}', Icons.people, const Color(0xFF2196F3)),
-          _buildStatCard('ASHA Workers', '${_districtStats['ashaWorkers']}', Icons.medical_services, const Color(0xFF4CAF50)),
-          _buildStatCard('Health Centers', '${_districtStats['healthCenters']}', Icons.local_hospital, const Color(0xFFF44336)),
+          _buildHealthPremiumHeader(),
+          const SizedBox(height: 30),
+          _buildDistrictStatsGrid(),
+          const SizedBox(height: 32),
+          _buildSectionHeader(
+              'Critical Outbreak Alerts', Icons.warning_amber_rounded),
+          const SizedBox(height: 16),
+          _buildOutbreakAlertList(),
+          const SizedBox(height: 32),
+          _buildSectionHeader(
+              'Essential Resource Logistics', Icons.local_shipping_rounded),
+          const SizedBox(height: 16),
+          _buildDistrictResourceGrid(),
+          const SizedBox(height: 32),
         ],
       ),
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 32),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: GoogleFonts.poppins(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.black,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
+  Widget _buildHealthPremiumHeader() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'District Administration',
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            color: Colors.grey[600],
+            letterSpacing: 0.5,
+          ),
         ),
+        Text(
+          'Health Surveillance',
+          style: GoogleFonts.poppins(
+            fontSize: 28,
+            fontWeight: FontWeight.bold,
+            color: AppDesign.primaryNavy,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppDesign.electricBlue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: AppDesign.electricBlue, size: 18),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          title,
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppDesign.primaryNavy,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDistrictStatsGrid() {
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      crossAxisSpacing: 16,
+      mainAxisSpacing: 16,
+      childAspectRatio: 1.4,
+      children: [
+        _buildDistrictStatCard(
+            'Total Villages',
+            _districtStats['villages'].toString(),
+            Icons.domain_rounded,
+            AppDesign.primaryNavy),
+        _buildDistrictStatCard(
+            'Registered Pop.',
+            _districtStats['population'].toString(),
+            Icons.groups_rounded,
+            AppDesign.electricBlue),
+        _buildDistrictStatCard(
+            'Health Workers',
+            _districtStats['ashaWorkers'].toString(),
+            Icons.medical_services_rounded,
+            AppDesign.aquaCyan),
+        _buildDistrictStatCard(
+            'Health Centers',
+            _districtStats['healthCenters'].toString(),
+            Icons.local_hospital_rounded,
+            AppDesign.deepTeal),
+      ],
+    );
+  }
+
+  Widget _buildDistrictStatCard(
+      String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(color: color.withOpacity(0.05)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Icon(icon, color: color, size: 24),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: AppDesign.primaryNavy,
+                ),
+              ),
+              Text(
+                label,
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOutbreakAlertList() {
+    return Column(
+      children: _outbreakAlerts
+          .take(2)
+          .map((alert) => _buildOutbreakCard(alert))
+          .toList(),
+    );
+  }
+
+  Widget _buildOutbreakCard(Map<String, dynamic> alert) {
+    bool isHighRisk = alert['risk'] == 'High';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isHighRisk ? Colors.red[50] : Colors.orange[50],
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+            color: isHighRisk ? Colors.red[100]! : Colors.orange[100]!),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isHighRisk ? Colors.red : Colors.orange,
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: const Icon(Icons.coronavirus_rounded, color: Colors.white),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  alert['village'],
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold,
+                    color: AppDesign.primaryNavy,
+                  ),
+                ),
+                Text(
+                  '${alert['cases']} active ${alert['disease']} cases',
+                  style: GoogleFonts.poppins(
+                      fontSize: 12, color: Colors.grey[700]),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                alert['risk'],
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  color: isHighRisk ? Colors.red : Colors.orange,
+                ),
+              ),
+              Row(
+                children: [
+                  Icon(
+                    alert['trend'] == 'Increasing'
+                        ? Icons.trending_up_rounded
+                        : Icons.trending_flat_rounded,
+                    size: 14,
+                    color: Colors.grey,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    alert['trend'],
+                    style:
+                        GoogleFonts.poppins(fontSize: 10, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
 // ---------- Outbreak Alerts List on Dashboard ----------
-  Widget _buildOutbreakAlerts() {
-    return Center(
-      child: Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            children: [
-              ..._outbreakAlerts.map((alert) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: ListTile(
-                    onTap: () {
-                      _openOutbreakDetails(alert);
-                    },
-                    leading: Icon(
-                      Icons.warning,
-                      color: alert['risk'] == 'High' ? Colors.red : Colors.orange,
-                    ),
-                    title: Text(
-                      '${alert['village']} - ${alert['disease']}',
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(
-                      '${alert['cases']} cases • Trend: ${alert['trend']} • Status: ${alert['status']}',
-                      style: GoogleFonts.poppins(),
-                    ),
-                    trailing: Chip(
-                      label: Text(
-                        alert['risk'],
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                      backgroundColor: alert['risk'] == 'High' ? Colors.red : Colors.orange,
-                    ),
-                  ),
-                );
-              }).toList(),
-              const SizedBox(height: 10),
-              ElevatedButton.icon(
-                onPressed: () => _showDeclareOutbreakForm(),
-                icon: const Icon(Icons.add_alert),
-                label: const Text('Declare Outbreak'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF9C27B0),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-// ---------- Resource Status on Dashboard ----------
-  Widget _buildResourceStatus() {
-    return Center(
-      child: Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            children: [
-              ..._resourceStatus.map((resource) {
-                final status = resource['status'] as String;
-                final level = resource['level'] as int;
-                final bgColor = status == 'Critical'
-                    ? Colors.red
-                    : status == 'Low'
-                    ? Colors.orange
-                    : Colors.green;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: ListTile(
-                    onTap: () {
-                      _showResourceDetails(resource);
-                    },
-                    leading: const Icon(Icons.inventory, color: Color(0xFF9C27B0)),
-                    title: Text(
-                      resource['resource'],
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(
-                      'Status: $status • Level: $level%',
-                      style: GoogleFonts.poppins(),
-                    ),
-                    trailing: Chip(
-                      label: Text(
-                        '$level%',
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                      backgroundColor: bgColor,
-                    ),
-                  ),
-                );
-              }).toList(),
-              const SizedBox(height: 10),
-              ElevatedButton.icon(
-                onPressed: () => _orderResources(),
-                icon: const Icon(Icons.add_shopping_cart),
-                label: const Text('Order Resource'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2196F3),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHealthQuickActions() {
-    return Center(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildActionButton(Icons.warning, 'Outbreak Alert', () {
-            _showDeclareOutbreakForm();
-          }, const Color(0xFF9C27B0)),
-          _buildActionButton(Icons.inventory, 'Order Resources', () {
-            _orderResources();
-          }, const Color(0xFF2196F3)),
-          _buildActionButton(Icons.assignment, 'Generate Report', () {
-            _generateHealthReport();
-          }, const Color(0xFF4CAF50)),
-          // CORRECTED: This button should call _showSendAlertDialog()
-          _buildActionButton(Icons.notifications, 'Send Alert', () {
-            _showSendAlertDialog();
-          }, Colors.orange),
-        ],
-      ),
-    );
-  }
 
 // Add this method to the _HealthOfficialDashboardState class
   void _showSendAlertDialog() {
-    final Map<String, String> alertTemplates = AlertSystem.getAlertTemplates('health_official');
+    final Map<String, String> alertTemplates =
+        AlertSystem.getAlertTemplates('health_official');
     String selectedTemplate = alertTemplates.keys.first;
     String customMessage = '';
     String selectedChannel = 'SMS';
@@ -5414,7 +6236,8 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
                           selectedTemplate = newValue!;
                         });
                       },
-                      decoration: const InputDecoration(labelText: 'Alert Template'),
+                      decoration:
+                          const InputDecoration(labelText: 'Alert Template'),
                     ),
                     const SizedBox(height: 16),
                     TextField(
@@ -5430,7 +6253,8 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       value: selectedChannel,
-                      items: ['SMS', 'WhatsApp', 'IVR Call'].map((String channel) {
+                      items:
+                          ['SMS', 'WhatsApp', 'IVR Call'].map((String channel) {
                         return DropdownMenuItem<String>(
                           value: channel,
                           child: Text(channel),
@@ -5472,14 +6296,16 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
                       if (selectedChannel == 'SMS') {
                         await AlertSystem.sendSMS(message, recipientNumber);
                       } else if (selectedChannel == 'WhatsApp') {
-                        await AlertSystem.sendWhatsApp(message, recipientNumber);
+                        await AlertSystem.sendWhatsApp(
+                            message, recipientNumber);
                       } else if (selectedChannel == 'IVR Call') {
                         await AlertSystem.makeCall(recipientNumber);
                       }
 
                       Navigator.of(context).pop();
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Alert sent via $selectedChannel')),
+                        SnackBar(
+                            content: Text('Alert sent via $selectedChannel')),
                       );
                     } catch (e) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -5497,11 +6323,13 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
     );
   }
 
-  Widget _buildActionButton(IconData icon, String label, VoidCallback onPressed, Color color) {
+  Widget _buildActionButton(
+      IconData icon, String label, VoidCallback onPressed, Color color) {
     return Column(
       children: [
         Container(
-          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
+          decoration: BoxDecoration(
+              color: color, borderRadius: BorderRadius.circular(8)),
           child: IconButton(
             icon: Icon(icon, color: Colors.white),
             onPressed: onPressed,
@@ -5524,204 +6352,340 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
 // ---------- Outbreaks Tab ----------
   Widget _buildOutbreaksTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Center(
-        child: Column(
-          children: [
-            Text(
-              'Disease Outbreak Management',
-              style: GoogleFonts.poppins(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF7B1FA2),
-              ),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader('Outbreak Management', Icons.emergency_rounded),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: AppDesign.accentGradient,
+              borderRadius: BorderRadius.circular(20),
             ),
-            const SizedBox(height: 16),
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Icon(Icons.warning, size: 50, color: Colors.red),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Outbreak Response',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Manage and respond to disease outbreaks',
-                      style: GoogleFonts.poppins(),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _manageOutbreakResponse();
-                      },
-                      icon: const Icon(Icons.emergency),
-                      label: const Text('Outbreak Response'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                  ],
+            child: Column(
+              children: [
+                Text(
+                  'Emergency Response',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
                 ),
-              ),
+                Text(
+                  'Deploy emergency medical teams and mobile clinics to high-risk zones.',
+                  style:
+                      GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () => _manageOutbreakResponse(),
+                  icon: const Icon(Icons.rocket_launch_rounded),
+                  label: const Text('Initiate Response'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.red[700],
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 24),
-            Text(
-              'Active Outbreaks',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF7B1FA2),
-              ),
+          ),
+          const SizedBox(height: 32),
+          Text(
+            'Active Village Alerts',
+            style: GoogleFonts.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: AppDesign.primaryNavy,
             ),
-            const SizedBox(height: 16),
-            ..._outbreakAlerts.map((alert) => Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              margin: const EdgeInsets.only(bottom: 16),
-              child: ListTile(
-                onTap: () {
-                  _openOutbreakDetails(alert);
-                },
-                leading: Icon(
-                  Icons.warning,
-                  color: alert['risk'] == 'High' ? Colors.red : Colors.orange,
-                ),
-                title: Text(
-                  '${alert['village']} - ${alert['disease']}',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(
-                  '${alert['cases']} cases • Trend: ${alert['trend']} • Status: ${alert['status']}',
-                  style: GoogleFonts.poppins(),
-                ),
-                trailing: PopupMenuButton<String>(
-                  onSelected: (value) {
-                    if (value == 'resolve') {
-                      _resolveOutbreak(alert['id']);
-                    } else if (value == 'respond') {
-                      _markInResponse(alert['id']);
-                    }
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(value: 'respond', child: Text('Mark In Response')),
-                    const PopupMenuItem(value: 'resolve', child: Text('Mark Resolved')),
-                  ],
-                ),
-              ),
-            )).toList(),
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          ..._outbreakAlerts
+              .map((alert) => _buildOutbreakCardExtended(alert))
+              .toList(),
+        ],
       ),
+    );
+  }
+
+  Widget _buildOutbreakCardExtended(Map<String, dynamic> alert) {
+    bool isHighRisk = alert['risk'] == 'High';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey[100]!),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: (isHighRisk ? Colors.red : Colors.orange)
+                      .withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.coronavirus_rounded,
+                  color: isHighRisk ? Colors.red : Colors.orange,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      alert['village'],
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        color: AppDesign.primaryNavy,
+                      ),
+                    ),
+                    Text(
+                      '${alert['disease']} Outbreak',
+                      style: GoogleFonts.poppins(
+                          fontSize: 12, color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: (isHighRisk ? Colors.red : Colors.orange)
+                      .withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  alert['risk'],
+                  style: GoogleFonts.poppins(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: isHighRisk ? Colors.red : Colors.orange,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Divider(height: 1),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildOutbreakActionItem(
+                  Icons.people_alt_rounded, '${alert['cases']} Cases'),
+              _buildOutbreakActionItem(
+                  Icons.trending_up_rounded, alert['trend']),
+              _buildOutbreakActionItem(
+                  Icons.pending_actions_rounded, alert['status']),
+              IconButton(
+                icon: const Icon(Icons.more_vert_rounded, size: 20),
+                onPressed: () => _openOutbreakDetails(alert),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOutbreakActionItem(IconData icon, String label) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: Colors.grey[400]),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey[600]),
+        ),
+      ],
     );
   }
 
 // ---------- Resources Tab ----------
   Widget _buildResourcesTab() {
     return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+              'Logistics & Inventory', Icons.inventory_2_rounded),
+          const SizedBox(height: 20),
+          _buildDistrictResourceGrid(),
+          const SizedBox(height: 32),
+          Text(
+            'Supply Chain Status',
+            style: GoogleFonts.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: AppDesign.primaryNavy,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ..._resourceStatus
+              .map((resource) => _buildResourceStatusCardExtended(resource))
+              .toList(),
+          const SizedBox(height: 20),
+          Center(
+            child: ElevatedButton.icon(
+              onPressed: () => _allocateResources(),
+              icon: const Icon(Icons.add_task_rounded),
+              label: const Text('Request Replenishment'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppDesign.primaryNavy,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 15),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDistrictResourceGrid() {
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      crossAxisSpacing: 16,
+      mainAxisSpacing: 16,
+      childAspectRatio: 1.5,
+      children: [
+        _buildResourceBasicCard(
+            'Medical Kits', '124', Icons.medication_rounded, Colors.green),
+        _buildResourceBasicCard(
+            'Test Kits', '45', Icons.biotech_rounded, Colors.orange),
+        _buildResourceBasicCard(
+            'Personnel', '32', Icons.badge_rounded, AppDesign.electricBlue),
+        _buildResourceBasicCard(
+            'Clinics', '04', Icons.local_hospital_rounded, AppDesign.deepTeal),
+      ],
+    );
+  }
+
+  Widget _buildResourceBasicCard(
+      String label, String value, IconData icon, Color color) {
+    return Container(
       padding: const EdgeInsets.all(16),
-      child: Center(
-        child: Column(
-          children: [
-            Text(
-              'Resource Management',
-              style: GoogleFonts.poppins(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF7B1FA2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Icon(Icons.inventory, size: 50, color: Color(0xFF9C27B0)),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Resource Allocation',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Manage and allocate health resources',
-                      style: GoogleFonts.poppins(),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _allocateResources();
-                      },
-                      icon: const Icon(Icons.dashboard),
-                      label: const Text('Allocate Resources'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF9C27B0),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                  ],
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey[100]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Icon(icon, color: color, size: 20),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppDesign.primaryNavy,
                 ),
               ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Current Resource Status',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF7B1FA2),
+              Text(
+                label,
+                style:
+                    GoogleFonts.poppins(fontSize: 10, color: Colors.grey[600]),
               ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResourceStatusCardExtended(Map<String, dynamic> resource) {
+    Color statusColor = resource['status'] == 'Critical'
+        ? Colors.red
+        : (resource['status'] == 'Low' ? Colors.orange : Colors.green);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.grey[100]!),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: statusColor.withOpacity(0.1),
+              shape: BoxShape.circle,
             ),
-            const SizedBox(height: 16),
-            ..._resourceStatus.map((resource) => Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              margin: const EdgeInsets.only(bottom: 16),
-              child: ListTile(
-                onTap: () => _showResourceDetails(resource),
-                leading: const Icon(Icons.inventory, color: Color(0xFF9C27B0)),
-                title: Text(
+            child:
+                Icon(Icons.inventory_2_rounded, color: statusColor, size: 20),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
                   resource['resource'],
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(
-                  'Status: ${resource['status']} • Level: ${resource['level']}%',
-                  style: GoogleFonts.poppins(),
-                ),
-                trailing: Chip(
-                  label: Text(
-                    '${resource['level']}%',
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold,
+                    color: AppDesign.primaryNavy,
                   ),
-                  backgroundColor: resource['status'] == 'Critical'
-                      ? Colors.red
-                      : resource['status'] == 'Low'
-                      ? Colors.orange
-                      : Colors.green,
+                ),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: LinearProgressIndicator(
+                    value: resource['level'] / 100,
+                    backgroundColor: Colors.grey[100],
+                    valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                    minHeight: 4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${resource['level']}%',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  color: statusColor,
                 ),
               ),
-            )).toList(),
-          ],
-        ),
+              Text(
+                resource['status'],
+                style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -5729,125 +6693,136 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
 // ---------- Analytics Tab ----------
   Widget _buildAnalyticsTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Center(
-        child: Column(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+              'Intelligence & Reporting', Icons.insights_rounded),
+          const SizedBox(height: 20),
+          _buildAnalyticsCard(
+            'District Health Report',
+            'Comprehensive analysis of disease vectors and population health.',
+            Icons.description_rounded,
+            AppDesign.primaryNavy,
+            () => _generateDistrictReport(),
+          ),
+          const SizedBox(height: 16),
+          _buildAnalyticsCard(
+            'Disease Trend Analysis',
+            'Predictive modeling for potential outbreaks based on historical data.',
+            Icons.show_chart_rounded,
+            AppDesign.electricBlue,
+            () => _analyzeDiseaseTrends(),
+          ),
+          const SizedBox(height: 16),
+          _buildAnalyticsCard(
+            'Resource Efficiency',
+            'Monitor the utilization and ROI of deployed health resources.',
+            Icons.pie_chart_rounded,
+            AppDesign.aquaCyan,
+            () {},
+          ),
+          const SizedBox(height: 32),
+          _buildSectionHeader('Regional Comparison', Icons.map_rounded),
+          const SizedBox(height: 16),
+          _buildRegionalStats(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalyticsCard(String title, String subtitle, IconData icon,
+      Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.grey[100]!),
+        ),
+        child: Row(
           children: [
-            Text(
-              'Health Analytics & Reports',
-              style: GoogleFonts.poppins(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF7B1FA2),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Icon(icon, color: color),
+            ),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.bold,
+                      color: AppDesign.primaryNavy,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.poppins(
+                        fontSize: 12, color: Colors.grey[600]),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Icon(Icons.analytics, size: 50, color: Color(0xFF2196F3)),
-                    const SizedBox(height: 16),
-                    Text(
-                      'District Health Report',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Generate comprehensive health reports',
-                      style: GoogleFonts.poppins(),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _generateDistrictReport();
-                      },
-                      icon: const Icon(Icons.description),
-                      label: const Text('Generate Report'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2196F3),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Icon(Icons.trending_up, size: 50, color: Color(0xFF4CAF50)),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Disease Trends',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Analyze disease patterns and trends',
-                      style: GoogleFonts.poppins(),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _analyzeDiseaseTrends();
-                      },
-                      icon: const Icon(Icons.show_chart),
-                      label: const Text('View Trends'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF4CAF50),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildTrendsPreview(),
-                  ],
-                ),
-              ),
-            ),
+            Icon(Icons.chevron_right_rounded, color: Colors.grey[400]),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTrendsPreview() {
-// Simple textual trend preview; you can swap with fl_chart visual
+  Widget _buildRegionalStats() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: AppDesign.glassDecoration(),
+      child: Column(
+        children: [
+          _buildRegionItem('North Zone', 0.85, Colors.green),
+          const SizedBox(height: 12),
+          _buildRegionItem('South Zone', 0.45, Colors.orange),
+          const SizedBox(height: 12),
+          _buildRegionItem('East Zone', 0.25, Colors.red),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRegionItem(String name, double value, Color color) {
     return Column(
-      children: _diseaseTrends.entries.map((entry) {
-        final disease = entry.key;
-        final series = entry.value;
-        final latest = series.isNotEmpty ? series.last : 0;
-        return ListTile(
-          leading: const Icon(Icons.timeline),
-          title: Text(disease, style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-          subtitle: Text('Recent cases: $latest • Series: ${series.join(', ')}'),
-          trailing: ElevatedButton(
-            onPressed: () {
-              _showTrendDetail(disease, series);
-            },
-            child: const Text('Open'),
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(name,
+                style: GoogleFonts.poppins(
+                    fontSize: 12, fontWeight: FontWeight.w500)),
+            Text('${(value * 100).toInt()}%',
+                style: GoogleFonts.poppins(
+                    fontSize: 12, fontWeight: FontWeight.bold, color: color)),
+          ],
+        ),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: LinearProgressIndicator(
+            value: value,
+            backgroundColor: Colors.grey[200],
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+            minHeight: 6,
           ),
-        );
-      }).toList(),
+        ),
+      ],
     );
   }
 
@@ -5872,7 +6847,8 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
                   onPressed: () {
                     Navigator.of(context).pop();
 // find and mark Tagore Enclave in response
-                    final found = _outbreakAlerts.where((a) => a['village'] == 'Tagore Enclave');
+                    final found = _outbreakAlerts
+                        .where((a) => a['village'] == 'Tagore Enclave');
                     if (found.isNotEmpty) _markInResponse(found.first['id']);
                   },
                 ),
@@ -5885,7 +6861,8 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
               ),
               const Divider(),
               ListTile(
-                leading: const Icon(Icons.medical_services, color: Colors.green),
+                leading:
+                    const Icon(Icons.medical_services, color: Colors.green),
                 title: const Text('Training session for ASHA workers'),
                 subtitle: const Text('Schedule for next week'),
               ),
@@ -5905,13 +6882,6 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
   }
 
 // Advanced analytics button (top-right)
-  void _showAdvancedAnalytics() {
-// For now navigate to analytics page
-    setState(() {
-      _currentIndex = 3;
-      _pageController.jumpToPage(3);
-    });
-  }
 
 // Quick actions FAB -> dialog with action choices
   void _showHealthQuickActions() {
@@ -5998,16 +6968,21 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
                 children: [
                   TextFormField(
                     decoration: const InputDecoration(labelText: 'Village'),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter village' : null,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? 'Enter village'
+                        : null,
                     onSaved: (v) => village = v!.trim(),
                   ),
                   TextFormField(
                     decoration: const InputDecoration(labelText: 'Disease'),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter disease' : null,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? 'Enter disease'
+                        : null,
                     onSaved: (v) => disease = v!.trim(),
                   ),
                   TextFormField(
-                    decoration: const InputDecoration(labelText: 'Number of Cases'),
+                    decoration:
+                        const InputDecoration(labelText: 'Number of Cases'),
                     keyboardType: TextInputType.number,
                     initialValue: '1',
                     validator: (v) {
@@ -6019,13 +6994,17 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
                   ),
                   DropdownButtonFormField<String>(
                     value: risk,
-                    items: const ['Low', 'Medium', 'High'].map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+                    items: const ['Low', 'Medium', 'High']
+                        .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                        .toList(),
                     onChanged: (v) => risk = v ?? 'Medium',
                     decoration: const InputDecoration(labelText: 'Risk Level'),
                   ),
                   DropdownButtonFormField<String>(
                     value: trend,
-                    items: const ['Decreasing', 'Stable', 'Increasing'].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                    items: const ['Decreasing', 'Stable', 'Increasing']
+                        .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                        .toList(),
                     onChanged: (v) => trend = v ?? 'Stable',
                     decoration: const InputDecoration(labelText: 'Trend'),
                   ),
@@ -6034,7 +7013,9 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel')),
             ElevatedButton(
               onPressed: () {
                 if (_formKey.currentState!.validate()) {
@@ -6054,7 +7035,8 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
                     _diseaseTrends[disease]!.add(cases);
                   });
                   Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Outbreak declared')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Outbreak declared')));
                 }
               },
               child: const Text('Declare'),
@@ -6102,7 +7084,9 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close')),
           ],
         );
       },
@@ -6115,7 +7099,8 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
       final idx = _outbreakAlerts.indexWhere((a) => a['id'] == id);
       if (idx != -1) {
         _outbreakAlerts[idx]['status'] = 'In Response';
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Marked In Response')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Marked In Response')));
       }
     });
   }
@@ -6126,7 +7111,8 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
       final idx = _outbreakAlerts.indexWhere((a) => a['id'] == id);
       if (idx != -1) {
         _outbreakAlerts[idx]['status'] = 'Resolved';
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Outbreak resolved')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Outbreak resolved')));
       }
     });
   }
@@ -6146,7 +7132,11 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
-                items: _resourceStatus.map((r) => r['resource'] as String).map((rname) => DropdownMenuItem(value: rname, child: Text(rname))).toList(),
+                items: _resourceStatus
+                    .map((r) => r['resource'] as String)
+                    .map((rname) =>
+                        DropdownMenuItem(value: rname, child: Text(rname)))
+                    .toList(),
                 value: _resourceStatus.first['resource'] as String,
                 onChanged: (v) => selectedResource = v,
                 decoration: const InputDecoration(labelText: 'Select Resource'),
@@ -6154,7 +7144,8 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
               TextFormField(
                 initialValue: '10',
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Quantity (approx to increase %)'),
+                decoration: const InputDecoration(
+                    labelText: 'Quantity (approx to increase %)'),
                 onChanged: (v) {
                   final n = int.tryParse(v) ?? 10;
                   quantity = n;
@@ -6163,22 +7154,29 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel')),
             ElevatedButton(
               onPressed: () {
-                final resourceName = selectedResource ?? _resourceStatus.first['resource'] as String;
+                final resourceName = selectedResource ??
+                    _resourceStatus.first['resource'] as String;
                 setState(() {
-                  final idx = _resourceStatus.indexWhere((r) => r['resource'] == resourceName);
+                  final idx = _resourceStatus
+                      .indexWhere((r) => r['resource'] == resourceName);
                   if (idx != -1) {
                     var current = _resourceStatus[idx]['level'] as int;
                     current = (current + quantity).clamp(0, 100);
                     _resourceStatus[idx]['level'] = current;
 // update status field
-                    _resourceStatus[idx]['status'] = current <= 15 ? 'Critical' : (current <= 40 ? 'Low' : 'Adequate');
+                    _resourceStatus[idx]['status'] = current <= 15
+                        ? 'Critical'
+                        : (current <= 40 ? 'Low' : 'Adequate');
                   }
                 });
                 Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order placed and resource updated')));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Order placed and resource updated')));
               },
               child: const Text('Order'),
             ),
@@ -6202,7 +7200,8 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
               const SizedBox(height: 8),
               TextFormField(
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Adjust level by (+/-)'),
+                decoration:
+                    const InputDecoration(labelText: 'Adjust level by (+/-)'),
                 initialValue: '0',
                 onChanged: (v) {
                   adjust = int.tryParse(v) ?? 0;
@@ -6211,20 +7210,27 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel')),
             ElevatedButton(
               onPressed: () {
                 setState(() {
-                  final idx = _resourceStatus.indexWhere((r) => r['resource'] == resource['resource']);
+                  final idx = _resourceStatus
+                      .indexWhere((r) => r['resource'] == resource['resource']);
                   if (idx != -1) {
-                    var newLevel = (_resourceStatus[idx]['level'] as int) + adjust;
+                    var newLevel =
+                        (_resourceStatus[idx]['level'] as int) + adjust;
                     newLevel = newLevel.clamp(0, 100);
                     _resourceStatus[idx]['level'] = newLevel;
-                    _resourceStatus[idx]['status'] = newLevel <= 15 ? 'Critical' : (newLevel <= 40 ? 'Low' : 'Adequate');
+                    _resourceStatus[idx]['status'] = newLevel <= 15
+                        ? 'Critical'
+                        : (newLevel <= 40 ? 'Low' : 'Adequate');
                   }
                 });
                 Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Resource updated')));
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Resource updated')));
               },
               child: const Text('Update'),
             ),
@@ -6269,22 +7275,29 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel')),
               ElevatedButton(
                 onPressed: () {
                   setState(() {
                     allocation.forEach((name, qty) {
-                      final idx = _resourceStatus.indexWhere((r) => r['resource'] == name);
+                      final idx = _resourceStatus
+                          .indexWhere((r) => r['resource'] == name);
                       if (idx != -1 && qty != 0) {
-                        final int current = _resourceStatus[idx]['level'] as int;
+                        final int current =
+                            _resourceStatus[idx]['level'] as int;
                         final newLevel = (current + qty).clamp(0, 100);
                         _resourceStatus[idx]['level'] = newLevel;
-                        _resourceStatus[idx]['status'] = newLevel <= 15 ? 'Critical' : (newLevel <= 40 ? 'Low' : 'Adequate');
+                        _resourceStatus[idx]['status'] = newLevel <= 15
+                            ? 'Critical'
+                            : (newLevel <= 40 ? 'Low' : 'Adequate');
                       }
                     });
                   });
                   Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Resources allocated')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Resources allocated')));
                 },
                 child: const Text('Allocate'),
               ),
@@ -6297,8 +7310,10 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
 
 // ---------- Generate report (quick in-app summary) ----------
   void _generateHealthReport() {
-    final outbreaks = _outbreakAlerts.where((a) => a['status'] != 'Resolved').length;
-    final criticalResources = _resourceStatus.where((r) => r['status'] == 'Critical').length;
+    final outbreaks =
+        _outbreakAlerts.where((a) => a['status'] != 'Resolved').length;
+    final criticalResources =
+        _resourceStatus.where((r) => r['status'] == 'Critical').length;
 
     final report = StringBuffer();
     report.writeln('=== District Health Report ===');
@@ -6309,7 +7324,8 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
     report.writeln('');
     report.writeln('Active Outbreaks: $outbreaks');
     for (var a in _outbreakAlerts) {
-      report.writeln('- ${a['village']}: ${a['disease']} (${a['cases']} cases) [${a['status']}]');
+      report.writeln(
+          '- ${a['village']}: ${a['disease']} (${a['cases']} cases) [${a['status']}]');
     }
     report.writeln('');
     report.writeln('Resource Status:');
@@ -6327,7 +7343,9 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
           title: const Text('Health Report'),
           content: SingleChildScrollView(child: Text(reportText)),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close')),
             ElevatedButton(
               onPressed: () {
 // Optional: export to PDF or share
@@ -6337,7 +7355,8 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
 // pdfDoc.addPage(pw.Page(build: (c) => pw.Text(reportText)));
 // Printing.layoutPdf(onLayout: (p) => pdfDoc.save());
                 Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report generated (view)')));
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Report generated (view)')));
               },
               child: const Text('Export (optional)'),
             ),
@@ -6355,7 +7374,8 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
 // ---------- Manage Outbreak response (opens quick action sheet) ----------
   void _manageOutbreakResponse() {
     if (_outbreakAlerts.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No outbreaks to manage')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No outbreaks to manage')));
       return;
     }
 // Open a selector for outbreaks and choose actions
@@ -6374,7 +7394,10 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
                   hint: const Text('Select outbreak'),
                   value: chosen,
                   items: _outbreakAlerts.map((o) {
-                    return DropdownMenuItem<Map>(value: o, child: Text('${o['village']} — ${o['disease']} (${o['status']})'));
+                    return DropdownMenuItem<Map>(
+                        value: o,
+                        child: Text(
+                            '${o['village']} — ${o['disease']} (${o['status']})'));
                   }).toList(),
                   onChanged: (val) {
                     setStateDialog(() {
@@ -6388,12 +7411,14 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
                       ? null
                       : () {
 // simulate sending team
-                    setState(() {
-                      chosen!['status'] = 'In Response';
-                    });
-                    Navigator.of(context).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Medical team dispatched')));
-                  },
+                          setState(() {
+                            chosen!['status'] = 'In Response';
+                          });
+                          Navigator.of(context).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Medical team dispatched')));
+                        },
                   icon: const Icon(Icons.local_shipping),
                   label: const Text('Send Medical Team'),
                 ),
@@ -6402,12 +7427,15 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
                   onPressed: chosen == null
                       ? null
                       : () {
-                    setState(() {
-                      chosen!['status'] = 'Awareness Campaign';
-                    });
-                    Navigator.of(context).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Awareness campaign scheduled')));
-                  },
+                          setState(() {
+                            chosen!['status'] = 'Awareness Campaign';
+                          });
+                          Navigator.of(context).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content:
+                                      Text('Awareness campaign scheduled')));
+                        },
                   icon: const Icon(Icons.campaign),
                   label: const Text('Schedule Awareness'),
                 ),
@@ -6416,19 +7444,23 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
                   onPressed: chosen == null
                       ? null
                       : () {
-                    setState(() {
-                      chosen!['status'] = 'Testing Scheduled';
-                    });
-                    Navigator.of(context).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Testing scheduled')));
-                  },
+                          setState(() {
+                            chosen!['status'] = 'Testing Scheduled';
+                          });
+                          Navigator.of(context).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Testing scheduled')));
+                        },
                   icon: const Icon(Icons.biotech),
                   label: const Text('Schedule Testing'),
                 ),
               ],
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
+              TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close')),
             ],
           );
         });
@@ -6458,11 +7490,14 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
               const SizedBox(height: 8),
               Text('Latest: ${series.isNotEmpty ? series.last : 0}'),
               const SizedBox(height: 8),
-              const Text('(Replace this section with a fl_chart line chart for a nicer visual)'),
+              const Text(
+                  '(Replace this section with a fl_chart line chart for a nicer visual)'),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close')),
           ],
         );
       },
@@ -6474,11 +7509,13 @@ class _HealthOfficialDashboardState extends State<HealthOfficialDashboard> {
     _openOutbreakDetails(outbreak);
   }
 }
+
 class CommunityMemberDashboard extends StatefulWidget {
   const CommunityMemberDashboard({super.key});
 
   @override
-  State<CommunityMemberDashboard> createState() => _CommunityMemberDashboardState();
+  State<CommunityMemberDashboard> createState() =>
+      _CommunityMemberDashboardState();
 }
 
 class _CommunityMemberDashboardState extends State<CommunityMemberDashboard> {
@@ -6487,550 +7524,733 @@ class _CommunityMemberDashboardState extends State<CommunityMemberDashboard> {
 
 // Mock data for Community Member
   final List<Map<String, dynamic>> _communityAlerts = [
-    {'type': 'Water', 'message': 'Boil water before use in Sector B', 'priority': 'High', 'date': '2 hours ago'},
-    {'type': 'Health', 'message': 'Free health check-up camp tomorrow', 'priority': 'Medium', 'date': '1 day ago'},
-    {'type': 'General', 'message': 'Community meeting on Sunday', 'priority': 'Low', 'date': '2 days ago'},
+    {
+      'type': 'Water',
+      'message': 'Boil water before use in Sector B',
+      'priority': 'High',
+      'date': '2 hours ago'
+    },
+    {
+      'type': 'Health',
+      'message': 'Free health check-up camp tomorrow',
+      'priority': 'Medium',
+      'date': '1 day ago'
+    },
+    {
+      'type': 'General',
+      'message': 'Community meeting on Sunday',
+      'priority': 'Low',
+      'date': '2 days ago'
+    },
   ];
 
   final List<Map<String, dynamic>> _waterSourceInfo = [
     {'name': 'Village Well', 'status': 'Unsafe', 'advice': 'Boil before use'},
     {'name': 'River Point', 'status': 'Safe', 'advice': 'Safe for drinking'},
     {'name': 'Hand Pump 1', 'status': 'Safe', 'advice': 'Safe for drinking'},
-    {'name': 'Hand Pump 2', 'status': 'Moderate', 'advice': 'Filter before use'},
+    {
+      'name': 'Hand Pump 2',
+      'status': 'Moderate',
+      'advice': 'Filter before use'
+    },
   ];
 
   final List<Map<String, dynamic>> _healthTips = [
-    {'title': 'Safe Water Practices', 'content': 'Always boil or filter water before drinking'},
-    {'title': 'Hand Hygiene', 'content': 'Wash hands with soap before eating and after using toilet'},
-    {'title': 'Food Safety', 'content': 'Cook food thoroughly and eat while fresh'},
-    {'title': 'Symptom Reporting', 'content': 'Report any health symptoms to ASHA worker immediately'},
+    {
+      'title': 'Safe Water Practices',
+      'content': 'Always boil or filter water before drinking'
+    },
+    {
+      'title': 'Hand Hygiene',
+      'content': 'Wash hands with soap before eating and after using toilet'
+    },
+    {
+      'title': 'Food Safety',
+      'content': 'Cook food thoroughly and eat while fresh'
+    },
+    {
+      'title': 'Symptom Reporting',
+      'content': 'Report any health symptoms to ASHA worker immediately'
+    },
   ];
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-// Navigate back to portal selection screen
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => const UserPortalScreen()),
-            );
-          },
-        ),
-        title: Text(
-          'Community Portal',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: const Color(0xFFF44336),
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications),
-            onPressed: () {
-              _showCommunityAlertsDialog();
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.help),
-            onPressed: () {
-              _showHelpDialog();
-            },
-          )
-        ],
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFFFEBEE),
-              Color(0xFFFFCDD2),
-              Color(0xFFEF9A9A),
+    return ResponsiveLayout(
+      mobile: Scaffold(
+        drawer: _buildCommunityDrawer(),
+        appBar: _buildCommunityAppBar(),
+        body: Container(
+          decoration: AppDesign.mainGradientDecoration(),
+          child: PageView(
+            controller: _pageController,
+            onPageChanged: (index) => setState(() => _currentIndex = index),
+            children: [
+              _buildCommunityDashboard(),
+              _buildAlertsTab(),
+              _buildWaterInfoTab(),
+              _buildHealthInfoTab(),
             ],
           ),
         ),
-        child: PageView(
-          controller: _pageController,
-          onPageChanged: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-          },
+        bottomNavigationBar: _buildCommunityBottomNav(),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _showCommunityQuickActions,
+          backgroundColor: AppDesign.electricBlue,
+          child: const Icon(Icons.add_rounded, color: Colors.white),
+        ),
+      ),
+      tablet: Scaffold(
+        body: Row(
           children: [
-            _buildCommunityDashboard(),
-            _buildAlertsTab(),
-            _buildWaterInfoTab(),
-            _buildHealthInfoTab(),
+            _buildCommunityNavRail(extended: false),
+            const VerticalDivider(thickness: 1, width: 1),
+            Expanded(
+              child: Container(
+                decoration: AppDesign.mainGradientDecoration(),
+                child: PageView(
+                  controller: _pageController,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _buildCommunityDashboard(),
+                    _buildAlertsTab(),
+                    _buildWaterInfoTab(),
+                    _buildHealthInfoTab(),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
+      web: Scaffold(
+        body: Row(
+          children: [
+            _buildCommunityNavRail(extended: true),
+            const VerticalDivider(thickness: 1, width: 1),
+            Expanded(
+              child: Container(
+                decoration: AppDesign.mainGradientDecoration(),
+                child: PageView(
+                  controller: _pageController,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _buildCommunityDashboard(),
+                    _buildAlertsTab(),
+                    _buildWaterInfoTab(),
+                    _buildHealthInfoTab(),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildCommunityAppBar() {
+    return AppBar(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      flexibleSpace: Container(decoration: AppDesign.premiumHeaderDecoration()),
+      title: Text('COMMUNITY PORTAL',
+          style: GoogleFonts.poppins(
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.5,
+              color: Colors.white)),
+      actions: [
+        IconButton(
+            icon: const Icon(Icons.notifications_none_rounded,
+                color: Colors.white),
+            onPressed: _showCommunityAlertsDialog),
+        const SizedBox(width: 8),
+      ],
+    );
+  }
+
+  Widget _buildCommunityBottomNav() {
+    return Container(
+      decoration: BoxDecoration(boxShadow: [
+        BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, -5))
+      ]),
+      child: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-            _pageController.jumpToPage(index);
-          });
+          setState(() => _currentIndex = index);
+          _pageController.jumpToPage(index);
         },
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFFF44336),
-        unselectedItemColor: Colors.grey,
+        backgroundColor: Colors.white,
+        selectedItemColor: AppDesign.electricBlue,
+        unselectedItemColor: Colors.grey[400],
+        selectedLabelStyle:
+            GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 10),
+        unselectedLabelStyle: GoogleFonts.poppins(fontSize: 10),
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
+              icon: Icon(Icons.dashboard_rounded), label: 'HOME'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.warning),
-            label: 'Alerts',
-          ),
+              icon: Icon(Icons.warning_amber_rounded), label: 'ALERTS'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.water_drop),
-            label: 'Water Info',
-          ),
+              icon: Icon(Icons.water_drop_rounded), label: 'WATER'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.health_and_safety),
-            label: 'Health Info',
-          ),
+              icon: Icon(Icons.health_and_safety_rounded), label: 'HEALTH'),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          _showCommunityQuickActions();
-        },
-        backgroundColor: const Color(0xFFF44336),
-        child: const Icon(Icons.add, color: Colors.white),
+    );
+  }
+
+  Widget _buildCommunityDrawer() {
+    return Drawer(
+      backgroundColor: Colors.white,
+      child: Column(
+        children: [
+          _buildCommunityPremiumDrawerHeader(),
+          const SizedBox(height: 10),
+          _buildDrawerItem(Icons.person_outline_rounded, 'My Profile', () {}),
+          _buildDrawerItem(Icons.history_rounded, 'Health History', () {}),
+          _buildDrawerItem(Icons.settings_outlined, 'Settings', () {}),
+          const Spacer(),
+          const Divider(),
+          _buildDrawerItem(Icons.logout_rounded, 'Switch Portal', () {
+            Navigator.of(context).pushReplacement(MaterialPageRoute(
+                builder: (context) => const UserPortalScreen()));
+          }),
+          const SizedBox(height: 20),
+        ],
       ),
+    );
+  }
+
+  Widget _buildCommunityPremiumDrawerHeader() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+      decoration: AppDesign.premiumHeaderDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const CircleAvatar(
+            radius: 35,
+            backgroundColor: Colors.white24,
+            child: Icon(Icons.person_rounded, size: 40, color: Colors.white),
+          ),
+          const SizedBox(height: 15),
+          Text('Welcome, Citizen',
+              style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18)),
+          Text('Member of Village Community',
+              style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem(IconData icon, String title, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: AppDesign.primaryNavy),
+      title: Text(title,
+          style: GoogleFonts.poppins(
+              color: AppDesign.primaryNavy, fontWeight: FontWeight.w500)),
+      onTap: onTap,
+    );
+  }
+
+  Widget _buildCommunityNavRail({required bool extended}) {
+    return NavigationRail(
+      extended: extended,
+      backgroundColor: Colors.white,
+      selectedIconTheme: const IconThemeData(color: AppDesign.electricBlue),
+      unselectedIconTheme: IconThemeData(color: Colors.grey[400]),
+      selectedLabelTextStyle: GoogleFonts.poppins(
+          color: AppDesign.electricBlue, fontWeight: FontWeight.bold),
+      unselectedLabelTextStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+      selectedIndex: _currentIndex,
+      onDestinationSelected: (index) {
+        setState(() => _currentIndex = index);
+        _pageController.jumpToPage(index);
+      },
+      leading: extended
+          ? Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text('COMMUNITY',
+                  style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.bold,
+                      color: AppDesign.primaryNavy)),
+            )
+          : const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Icon(Icons.groups_rounded, color: AppDesign.primaryNavy)),
+      destinations: const [
+        NavigationRailDestination(
+            icon: Icon(Icons.dashboard_rounded), label: Text('Home')),
+        NavigationRailDestination(
+            icon: Icon(Icons.warning_amber_rounded), label: Text('Alerts')),
+        NavigationRailDestination(
+            icon: Icon(Icons.water_drop_rounded), label: Text('Water')),
+        NavigationRailDestination(
+            icon: Icon(Icons.health_and_safety_rounded), label: Text('Health')),
+      ],
     );
   }
 
   Widget _buildCommunityDashboard() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Center(
-        child: Column(
-          children: [
-            Text(
-              'Community Information',
-              style: GoogleFonts.poppins(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFFD32F2F),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildCommunityStatus(),
-            const SizedBox(height: 24),
-            Text(
-              'Recent Alerts',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFFD32F2F),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildRecentAlerts(),
-            const SizedBox(height: 24),
-            Text(
-              'Water Source Status',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFFD32F2F),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildWaterSourceStatus(),
-            const SizedBox(height: 24),
-            Text(
-              'Quick Actions',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFFD32F2F),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildCommunityQuickActions(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCommunityStatus() {
-    return Center(
-      child: Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: const Padding(
-          padding: EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Icon(Icons.people, size: 50, color: Color(0xFFF44336)),
-              SizedBox(height: 16),
-              Text(
-                'Community Health Status',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'No active outbreaks in your area',
-                style: TextStyle(fontSize: 16, color: Colors.green),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Stay informed about water safety and health alerts',
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRecentAlerts() {
-    return Center(
-      child: Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              for (var alert in _communityAlerts)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: ListTile(
-                    leading: Icon(
-                      Icons.warning,
-                      color: alert['priority'] == 'High' ? Colors.red :
-                      alert['priority'] == 'Medium' ? Colors.orange : Colors.blue,
-                    ),
-                    title: Text(
-                      alert['message'],
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(
-                      '${alert['type']} • ${alert['date']}',
-                      style: GoogleFonts.poppins(),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWaterSourceStatus() {
-    return Center(
-      child: Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              for (var source in _waterSourceInfo)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: ListTile(
-                    leading: const Icon(Icons.water_drop, color: Color(0xFF2196F3)),
-                    title: Text(
-                      source['name'],
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(
-                      'Status: ${source['status']} • ${source['advice']}',
-                      style: GoogleFonts.poppins(),
-                    ),
-                    trailing: Icon(
-                      source['status'] == 'Unsafe' ? Icons.warning : Icons.check_circle,
-                      color: source['status'] == 'Unsafe' ? Colors.red : Colors.green,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCommunityQuickActions() {
-    return Center(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildActionButton(Icons.report, 'Report Symptoms', () {
-            _reportSymptoms();
-          }, const Color(0xFFF44336)),
-          _buildActionButton(Icons.water_drop, 'Water Concern', () {
-            _reportWaterConcern();
-          }, const Color(0xFF2196F3)),
-          _buildActionButton(Icons.help, 'Get Help', () {
-            _getHelp();
-          }, const Color(0xFF4CAF50)),
+          _buildCommunityHomeHeader(),
+          const SizedBox(height: 32),
+          _buildSectionHeader('Live Metrics', Icons.sensors_rounded),
+          const SizedBox(height: 16),
+          _buildCommunityMetrics(),
+          const SizedBox(height: 40),
+          _buildSectionHeader('Critical Awareness', Icons.campaign_rounded),
+          const SizedBox(height: 16),
+          _buildCommunityAlertPreview(),
+          const SizedBox(height: 40),
+          _buildSectionHeader('Smart Access', Icons.grid_view_rounded),
+          const SizedBox(height: 16),
+          _buildCommunityActionGrid(),
+          const SizedBox(height: 100),
         ],
       ),
     );
   }
 
-  Widget _buildActionButton(IconData icon, String label, VoidCallback onPressed, Color color) {
-    return Column(
+  Widget _buildCommunityHomeHeader() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: AppDesign.glassDecoration(),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('YOUR COMMUNITY',
+                    style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                        letterSpacing: 1.2)),
+                Text('Safe & Healthy',
+                    style: GoogleFonts.poppins(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: AppDesign.primaryNavy)),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(15)),
+            child: const Icon(Icons.verified_user_rounded, color: Colors.green),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommunityMetrics() {
+    return Row(
       children: [
-        Container(
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: IconButton(
-            icon: Icon(icon, color: Colors.white),
-            onPressed: onPressed,
-          ),
-        ),
-        const SizedBox(height: 6),
-        SizedBox(
-          width: 90,
-          child: Text(
-            label,
-            style: GoogleFonts.poppins(fontSize: 12),
-            textAlign: TextAlign.center,
+        Expanded(
+            child: _buildCommunityStatCard('Water Purity', '98%',
+                Icons.opacity_rounded, AppDesign.electricBlue)),
+        const SizedBox(width: 12),
+        Expanded(
+            child: _buildCommunityStatCard('Outbreaks', 'NONE',
+                Icons.health_and_safety_rounded, Colors.green)),
+      ],
+    );
+  }
+
+  Widget _buildCommunityStatCard(
+      String title, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey[100]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 12),
+          Text(value,
+              style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: AppDesign.primaryNavy)),
+          Text(title,
+              style:
+                  GoogleFonts.poppins(fontSize: 10, color: Colors.grey[600])),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommunityAlertPreview() {
+    final alert = _communityAlerts.first;
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: alert['priority'] == 'High'
+            ? Colors.red.withOpacity(0.05)
+            : AppDesign.electricBlue.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+            color: alert['priority'] == 'High'
+                ? Colors.red.withOpacity(0.1)
+                : AppDesign.electricBlue.withOpacity(0.1)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.warning_amber_rounded,
+              color: alert['priority'] == 'High'
+                  ? Colors.red
+                  : AppDesign.electricBlue),
+          const SizedBox(width: 16),
+          Expanded(
+              child: Text(alert['message'],
+                  style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: AppDesign.primaryNavy))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommunityActionGrid() {
+    return GridView.count(
+      crossAxisCount: ResponsiveLayout.isMobile(context) ? 3 : 6,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 16,
+      crossAxisSpacing: 16,
+      children: [
+        _buildASHACard('Report', Icons.edit_notifications_rounded,
+            AppDesign.primaryNavy, _reportSymptoms),
+        _buildASHACard('Water', Icons.water_drop_rounded,
+            AppDesign.electricBlue, _reportWaterConcern),
+        _buildASHACard(
+            'Clinic', Icons.local_hospital_rounded, AppDesign.aquaCyan, () {}),
+        _buildASHACard(
+            'Support', Icons.headset_mic_rounded, AppDesign.deepTeal, _getHelp),
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: AppDesign.primaryNavy),
+        const SizedBox(width: 10),
+        Text(
+          title.toUpperCase(),
+          style: GoogleFonts.poppins(
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+            color: AppDesign.primaryNavy,
+            letterSpacing: 1.2,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildAlertsTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Center(
+  Widget _buildASHACard(
+      String title, IconData icon, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(15),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: Colors.grey[100]!),
+        ),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(height: 8),
             Text(
-              'Community Alerts',
+              title,
+              textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFFD32F2F),
-              ),
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: AppDesign.primaryNavy),
             ),
-            const SizedBox(height: 16),
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Icon(Icons.notifications_active, size: 50, color: Color(0xFFF44336)),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Emergency Alerts',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Important notifications for your community',
-                      style: GoogleFonts.poppins(),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Recent Alerts',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFFD32F2F),
-              ),
-            ),
-            const SizedBox(height: 16),
-            ..._communityAlerts.map((alert) => Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              margin: const EdgeInsets.only(bottom: 16),
-              child: ListTile(
-                leading: Icon(
-                  Icons.warning,
-                  color: alert['priority'] == 'High' ? Colors.red :
-                  alert['priority'] == 'Medium' ? Colors.orange : Colors.blue,
-                ),
-                title: Text(
-                  alert['message'],
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(
-                  '${alert['type']} • ${alert['date']}',
-                  style: GoogleFonts.poppins(),
-                ),
-              ),
-            )).toList(),
           ],
         ),
       ),
     );
   }
 
+  void _showCommunityQuickActions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(30),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(30), topRight: Radius.circular(30)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionHeader('Citizen Support', Icons.help_outline_rounded),
+            const SizedBox(height: 25),
+            _buildQuickActionItem(
+                Icons.report_problem_rounded,
+                'Report Symptoms',
+                'Log your current health status',
+                AppDesign.primaryNavy, () {
+              Navigator.pop(context);
+              _reportSymptoms();
+            }),
+            _buildQuickActionItem(Icons.water_drop_rounded, 'Water Concern',
+                'Report issues with local water', AppDesign.electricBlue, () {
+              Navigator.pop(context);
+              _reportWaterConcern();
+            }),
+            _buildQuickActionItem(
+                Icons.support_agent_rounded,
+                'Get Emergency Help',
+                'Connect with village health team',
+                Colors.red, () {
+              Navigator.pop(context);
+              _getHelp();
+            }),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActionItem(IconData icon, String title, String subtitle,
+      Color color, VoidCallback onTap) {
+    return ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+      leading: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(15)),
+        child: Icon(icon, color: color),
+      ),
+      title: Text(title,
+          style: GoogleFonts.poppins(
+              fontWeight: FontWeight.bold, color: AppDesign.primaryNavy)),
+      subtitle: Text(subtitle, style: GoogleFonts.poppins(fontSize: 12)),
+      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+    );
+  }
+
+  Widget _buildAlertsTab() {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+              'Community Bulletins', Icons.notifications_active_rounded),
+          const SizedBox(height: 20),
+          ..._communityAlerts.map((alert) => _buildPremiumAlertCard(alert)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPremiumAlertCard(Map<String, dynamic> alert) {
+    final color = alert['priority'] == 'High'
+        ? Colors.red
+        : (alert['priority'] == 'Medium'
+            ? Colors.orange
+            : AppDesign.electricBlue);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey[100]!),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12)),
+            child: Icon(Icons.warning_amber_rounded, color: color, size: 24),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(alert['type'],
+                        style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: color,
+                            letterSpacing: 1)),
+                    Text(alert['date'],
+                        style: GoogleFonts.poppins(
+                            fontSize: 10, color: Colors.grey[400])),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(alert['message'],
+                    style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        color: AppDesign.primaryNavy)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildWaterInfoTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Center(
-        child: Column(
-          children: [
-            Text(
-              'Water Safety Information',
-              style: GoogleFonts.poppins(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFFD32F2F),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Icon(Icons.water_drop, size: 50, color: Color(0xFF2196F3)), // Fixed: Icles -> Icons
-                    const SizedBox(height: 16),
-                    Text(
-                      'Water Source Status',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader('Resource Stewardship', Icons.water_drop_rounded),
+          const SizedBox(height: 20),
+          ..._waterSourceInfo.map((source) => _buildPremiumWaterCard(source)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPremiumWaterCard(Map<String, dynamic> source) {
+    final isSafe = source['status'] == 'Safe';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey[100]!),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: (isSafe ? Colors.green : Colors.orange).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(15)),
+            child: Icon(
+                isSafe ? Icons.check_circle_rounded : Icons.warning_rounded,
+                color: isSafe ? Colors.green : Colors.orange),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(source['name'],
+                    style: GoogleFonts.poppins(
                         fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Current status of water sources in your area',
-                      style: GoogleFonts.poppins(),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
+                        color: AppDesign.primaryNavy)),
+                Text(source['advice'],
+                    style: GoogleFonts.poppins(
+                        fontSize: 12, color: Colors.grey[600])),
+              ],
             ),
-            const SizedBox(height: 24),
-            Text(
-              'Water Sources',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFFD32F2F),
-              ),
-            ),
-            const SizedBox(height: 16),
-            ..._waterSourceInfo.map((source) => Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              margin: const EdgeInsets.only(bottom: 16),
-              child: ListTile(
-                leading: const Icon(Icons.water_drop, color: Color(0xFF2196F3)),
-                title: Text(
-                  source['name'],
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(
-                  'Status: ${source['status']} • ${source['advice']}',
-                  style: GoogleFonts.poppins(),
-                ),
-                trailing: Icon(
-                  source['status'] == 'Unsafe' ? Icons.warning : Icons.check_circle,
-                  color: source['status'] == 'Unsafe' ? Colors.red : Colors.green,
-                ),
-              ),
-            )).toList(),
-          ],
-        ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+                color: (isSafe ? Colors.green : Colors.orange).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10)),
+            child: Text(source['status'],
+                style: GoogleFonts.poppins(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: isSafe ? Colors.green : Colors.orange)),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildHealthInfoTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Center(
-        child: Column(
-          children: [
-            Text(
-              'Health Information',
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+              'Citizen Health Guide', Icons.health_and_safety_rounded),
+          const SizedBox(height: 20),
+          ..._healthTips.map((tip) => _buildPremiumTipCard(tip)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPremiumTipCard(Map<String, dynamic> tip) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey[100]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.lightbulb_outline_rounded,
+                  color: AppDesign.aquaCyan, size: 20),
+              const SizedBox(width: 8),
+              Text(tip['title'],
+                  style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.bold,
+                      color: AppDesign.primaryNavy)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(tip['content'],
               style: GoogleFonts.poppins(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFFD32F2F),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Icon(Icons.health_and_safety, size: 50, color: Color(0xFF4CAF50)),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Health Tips & Guidance',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Important health information for your family',
-                      style: GoogleFonts.poppins(),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Health Tips',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFFD32F2F),
-              ),
-            ),
-            const SizedBox(height: 16),
-            ..._healthTips.map((tip) => Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              margin: const EdgeInsets.only(bottom: 16),
-              child: ListTile(
-                leading: const Icon(Icons.lightbulb, color: Color(0xFFFFC107)),
-                title: Text(
-                  tip['title'],
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                ),
-                subtitle: Text(tip['content']),
-              ),
-            )).toList(),
-          ],
-        ),
+                  fontSize: 13, color: Colors.grey[600], height: 1.5)),
+        ],
       ),
     );
   }
@@ -7098,7 +8318,8 @@ class _CommunityMemberDashboardState extends State<CommunityMemberDashboard> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.medical_services, color: Colors.green),
+                leading:
+                    const Icon(Icons.medical_services, color: Colors.green),
                 title: const Text('Contact ASHA Worker'),
                 subtitle: const Text('For health concerns and symptoms'),
                 onTap: () {
@@ -7141,68 +8362,6 @@ class _CommunityMemberDashboardState extends State<CommunityMemberDashboard> {
     );
   }
 
-  void _showCommunityQuickActions() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Community Actions'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.report, color: Colors.red),
-                title: const Text('Report Symptoms'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _reportSymptoms();
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.water_drop, color: Colors.blue),
-                title: const Text('Report Water Concern'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _reportWaterConcern();
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.help, color: Colors.green),
-                title: const Text('Get Help'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _getHelp();
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.info, color: Colors.purple),
-                title: const Text('View Health Tips'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  setState(() {
-                    _currentIndex = 3;
-                    _pageController.jumpToPage(3);
-                  });
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('Cancel'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   void _reportSymptoms() {
     showDialog(
       context: context,
@@ -7222,17 +8381,23 @@ class _CommunityMemberDashboardState extends State<CommunityMemberDashboard> {
                 children: [
                   TextFormField(
                     decoration: const InputDecoration(labelText: 'Your Name'),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter your name' : null,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? 'Enter your name'
+                        : null,
                     onSaved: (v) => name = v!.trim(),
                   ),
                   TextFormField(
                     decoration: const InputDecoration(labelText: 'Symptoms'),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Describe symptoms' : null,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? 'Describe symptoms'
+                        : null,
                     onSaved: (v) => symptoms = v!.trim(),
                   ),
                   TextFormField(
                     decoration: const InputDecoration(labelText: 'Duration'),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter duration' : null,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? 'Enter duration'
+                        : null,
                     onSaved: (v) => duration = v!.trim(),
                   ),
                 ],
@@ -7250,7 +8415,8 @@ class _CommunityMemberDashboardState extends State<CommunityMemberDashboard> {
                   _formKey.currentState!.save();
                   Navigator.of(context).pop();
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Symptoms reported successfully')),
+                    const SnackBar(
+                        content: Text('Symptoms reported successfully')),
                   );
                 }
               },
@@ -7280,12 +8446,17 @@ class _CommunityMemberDashboardState extends State<CommunityMemberDashboard> {
                 children: [
                   TextFormField(
                     decoration: const InputDecoration(labelText: 'Location'),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter location' : null,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? 'Enter location'
+                        : null,
                     onSaved: (v) => location = v!.trim(),
                   ),
                   TextFormField(
-                    decoration: const InputDecoration(labelText: 'Concern Description'),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Describe the concern' : null,
+                    decoration:
+                        const InputDecoration(labelText: 'Concern Description'),
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? 'Describe the concern'
+                        : null,
                     onSaved: (v) => concern = v!.trim(),
                     maxLines: 3,
                   ),
@@ -7304,7 +8475,8 @@ class _CommunityMemberDashboardState extends State<CommunityMemberDashboard> {
                   _formKey.currentState!.save();
                   Navigator.of(context).pop();
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Water concern reported successfully')),
+                    const SnackBar(
+                        content: Text('Water concern reported successfully')),
                   );
                 }
               },
@@ -7357,7 +8529,6 @@ class _CommunityMemberDashboardState extends State<CommunityMemberDashboard> {
 // HydroBot Integration Wrapper
 // OPTIMUS-X Integration Wrapper
 
-
 void Main() {
   runApp(OptimusXApp());
 }
@@ -7375,157 +8546,6 @@ class OptimusXApp extends StatelessWidget {
       ),
       home: SplashScreen(),
       debugShowCheckedModeBanner: false,
-    );
-  }
-}
-
-class splashScreen extends StatefulWidget {
-  const splashScreen({super.key});
-
-  @override
-  State<SplashScreen> createState() => _SplashScreenState();
-}
-
-class _splashScreenState extends State<SplashScreen>
-    with TickerProviderStateMixin {
-  late AnimationController _drawController;
-  late AnimationController _fadeController;
-  late AnimationController _taglineController;
-
-  late Animation<double> _drawAnimation;
-  late Animation<double> _fadeAnimation;
-  late Animation<double> _taglineAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-
-    // "O" drawing animation
-    _drawController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    );
-
-    _drawAnimation = CurvedAnimation(
-      parent: _drawController,
-      curve: Curves.easeInOutCubic,
-    );
-
-    // Fade in OPTIMUS-X text
-    _fadeController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-    _fadeAnimation = CurvedAnimation(
-      parent: _fadeController,
-      curve: Curves.easeIn,
-    );
-
-    // Fade in Tagline
-    _taglineController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-    _taglineAnimation = CurvedAnimation(
-      parent: _taglineController,
-      curve: Curves.easeIn,
-    );
-
-    // Sequence animations
-    _drawController.forward().whenComplete(() {
-      _fadeController.forward().whenComplete(() {
-        _taglineController.forward();
-      });
-    });
-
-    // Navigate after splash (extended to 6 seconds total)
-    Future.delayed(const Duration(seconds: 6), () {
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => LoginScreen()),
-        );
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _drawController.dispose();
-    _fadeController.dispose();
-    _taglineController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF000000), Color(0xFF0A0A1A)], // Fully dark background
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Animated "O" for OPTIMUS-X
-              AnimatedBuilder(
-                animation: _drawAnimation,
-                builder: (context, child) {
-                  return CustomPaint(
-                    painter: FancyOPainter(progress: _drawAnimation.value),
-                    size: const Size(200, 200),
-                  );
-                },
-              ),
-
-              const SizedBox(height: 30),
-
-              // OPTIMUS-X
-              FadeTransition(
-                opacity: _fadeAnimation,
-                child: Text(
-                  "OPTIMUS-X",
-                  style: TextStyle(
-                    fontSize: 42,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    letterSpacing: 6,
-                    shadows: [
-                      Shadow(
-                        blurRadius: 20,
-                        color: Colors.cyanAccent.withOpacity(0.9),
-                        offset: const Offset(0, 0),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 15),
-
-              // Smart Sabarmati Riverfront & Urban Water Bodies (tagline)
-              FadeTransition(
-                opacity: _taglineAnimation,
-                child: Text(
-                  "Smart Sabarmati Riverfront & Urban Water Bodies",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white.withOpacity(0.9),
-                    letterSpacing: 2,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
@@ -7557,7 +8577,8 @@ class FancyOPainter extends CustomPainter {
     final radius = size.width / 3;
 
     // Draw a stylish "O" - circular shape with a small gap at the top
-    path.addArc(Rect.fromCircle(center: center, radius: radius), 0, 2 * math.pi * 0.95);
+    path.addArc(
+        Rect.fromCircle(center: center, radius: radius), 0, 2 * pi * 0.95);
 
     final p = progress.clamp(0.0, 1.0);
 
@@ -7571,7 +8592,7 @@ class FancyOPainter extends CustomPainter {
 
     for (final metric in metrics) {
       if (drawLength <= 0) break;
-      final take = math.min(metric.length, drawLength);
+      final take = min(metric.length, drawLength);
       drawnPath.addPath(metric.extractPath(0.0, take), Offset.zero);
       drawLength -= take;
     }
@@ -7591,6 +8612,7 @@ class FancyOPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant FancyOPainter old) => old.progress != progress;
 }
+
 /// Custom Route Transition (for Back to Portal & Login)
 class FadeSlidePageRoute extends PageRouteBuilder {
   final Widget page;
@@ -7602,8 +8624,8 @@ class FadeSlidePageRoute extends PageRouteBuilder {
             const end = Offset.zero;
             final tween = Tween(begin: begin, end: end)
                 .chain(CurveTween(curve: Curves.easeOutCubic));
-            final fadeTween =
-                Tween<double>(begin: 0.0, end: 1.0).chain(CurveTween(curve: Curves.easeIn));
+            final fadeTween = Tween<double>(begin: 0.0, end: 1.0)
+                .chain(CurveTween(curve: Curves.easeIn));
 
             return SlideTransition(
               position: animation.drive(tween),
@@ -7650,10 +8672,7 @@ class LoginScreen extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
-                  colors: [
-                    Colors.blue.withOpacity(0.08),
-                    Colors.transparent
-                  ],
+                  colors: [Colors.blue.withOpacity(0.08), Colors.transparent],
                 ),
               ),
             ),
@@ -7667,10 +8686,7 @@ class LoginScreen extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
-                  colors: [
-                    Colors.purple.withOpacity(0.06),
-                    Colors.transparent
-                  ],
+                  colors: [Colors.purple.withOpacity(0.06), Colors.transparent],
                 ),
               ),
             ),
@@ -7767,11 +8783,12 @@ class LoginScreen extends StatelessWidget {
                                             color: Colors.blue.withOpacity(0.1),
                                             shape: BoxShape.circle,
                                             border: Border.all(
-                                              color: Colors.blue.withOpacity(0.3),
+                                              color:
+                                                  Colors.blue.withOpacity(0.3),
                                             ),
                                           ),
                                           child: Icon(Icons.security_rounded,
-                                              size: 40, 
+                                              size: 40,
                                               color: Colors.blueAccent),
                                         ),
                                         SizedBox(height: 20),
@@ -7804,10 +8821,12 @@ class LoginScreen extends StatelessWidget {
                                       /// Username Field
                                       Container(
                                         decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
                                           boxShadow: [
                                             BoxShadow(
-                                              color: Colors.black.withOpacity(0.1),
+                                              color:
+                                                  Colors.black.withOpacity(0.1),
                                               blurRadius: 10,
                                               offset: Offset(0, 4),
                                             ),
@@ -7821,26 +8840,31 @@ class LoginScreen extends StatelessWidget {
                                           ),
                                           decoration: InputDecoration(
                                             filled: true,
-                                            fillColor: Colors.white.withOpacity(0.07),
+                                            fillColor:
+                                                Colors.white.withOpacity(0.07),
                                             labelText: 'Username',
                                             labelStyle: TextStyle(
                                               color: Colors.white60,
                                               fontSize: 14,
                                             ),
                                             border: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(12),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
                                               borderSide: BorderSide.none,
                                             ),
                                             focusedBorder: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(12),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
                                               borderSide: BorderSide(
                                                 color: Colors.blueAccent,
                                                 width: 1.5,
                                               ),
                                             ),
-                                            prefixIcon: Icon(Icons.person_outline,
+                                            prefixIcon: Icon(
+                                                Icons.person_outline,
                                                 color: Colors.white54),
-                                            contentPadding: EdgeInsets.symmetric(
+                                            contentPadding:
+                                                EdgeInsets.symmetric(
                                               horizontal: 20,
                                               vertical: 18,
                                             ),
@@ -7852,10 +8876,12 @@ class LoginScreen extends StatelessWidget {
                                       /// Password Field
                                       Container(
                                         decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
                                           boxShadow: [
                                             BoxShadow(
-                                              color: Colors.black.withOpacity(0.1),
+                                              color:
+                                                  Colors.black.withOpacity(0.1),
                                               blurRadius: 10,
                                               offset: Offset(0, 4),
                                             ),
@@ -7870,26 +8896,31 @@ class LoginScreen extends StatelessWidget {
                                           ),
                                           decoration: InputDecoration(
                                             filled: true,
-                                            fillColor: Colors.white.withOpacity(0.07),
+                                            fillColor:
+                                                Colors.white.withOpacity(0.07),
                                             labelText: 'Password',
                                             labelStyle: TextStyle(
                                               color: Colors.white60,
                                               fontSize: 14,
                                             ),
                                             border: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(12),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
                                               borderSide: BorderSide.none,
                                             ),
                                             focusedBorder: OutlineInputBorder(
-                                              borderRadius: BorderRadius.circular(12),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
                                               borderSide: BorderSide(
                                                 color: Colors.blueAccent,
                                                 width: 1.5,
                                               ),
                                             ),
-                                            prefixIcon: Icon(Icons.lock_outline_rounded,
+                                            prefixIcon: Icon(
+                                                Icons.lock_outline_rounded,
                                                 color: Colors.white54),
-                                            contentPadding: EdgeInsets.symmetric(
+                                            contentPadding:
+                                                EdgeInsets.symmetric(
                                               horizontal: 20,
                                               vertical: 18,
                                             ),
@@ -7914,7 +8945,8 @@ class LoginScreen extends StatelessWidget {
                                     child: Row(
                                       children: [
                                         Icon(Icons.info_outline_rounded,
-                                            size: 16, color: Colors.orangeAccent),
+                                            size: 16,
+                                            color: Colors.orangeAccent),
                                         SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
@@ -7939,7 +8971,8 @@ class LoginScreen extends StatelessWidget {
                                       elevation: 8,
                                       child: Container(
                                         decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
                                           gradient: LinearGradient(
                                             colors: [
                                               Colors.blueAccent,
@@ -7962,7 +8995,8 @@ class LoginScreen extends StatelessWidget {
                                               vertical: 18,
                                             ),
                                             shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(12),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
                                             ),
                                           ),
                                           child: Text(
@@ -7994,7 +9028,8 @@ class LoginScreen extends StatelessWidget {
                                           'Forgot Password?',
                                           style: TextStyle(
                                             fontSize: 14,
-                                            decoration: TextDecoration.underline,
+                                            decoration:
+                                                TextDecoration.underline,
                                           ),
                                         ),
                                       ),
@@ -8022,7 +9057,8 @@ class LoginScreen extends StatelessWidget {
     final password = _passwordController.text.trim();
 
     if (username.isEmpty || password.isEmpty) {
-      _showSnackBar(context, 'Please enter both username and password', Colors.orange);
+      _showSnackBar(
+          context, 'Please enter both username and password', Colors.orange);
       return;
     }
 
@@ -8033,7 +9069,8 @@ class LoginScreen extends StatelessWidget {
         MaterialPageRoute(builder: (context) => OptimusXHomePage()),
       );
     } else {
-      _showSnackBar(context, 'Invalid credentials. Use admin/123456', Colors.red);
+      _showSnackBar(
+          context, 'Invalid credentials. Use admin/123456', Colors.red);
     }
   }
 
@@ -8089,13 +9126,14 @@ class OptimusXHomePage extends StatefulWidget {
   _OptimusXHomePageState createState() => _OptimusXHomePageState();
 }
 
-class _OptimusXHomePageState extends State<OptimusXHomePage> with SingleTickerProviderStateMixin {
+class _OptimusXHomePageState extends State<OptimusXHomePage>
+    with SingleTickerProviderStateMixin {
   int _selectedIndex = 0;
   late Timer _dataUpdateTimer;
 
   final DatabaseReference _sensorRef = FirebaseDatabase.instance.ref('sensor');
   Timer? _timer;
-  
+
   // Sensor data variables - using only the ones from Firebase
   double tdsValue = 0.0;
   double temperature = 0.0;
@@ -8105,7 +9143,7 @@ class _OptimusXHomePageState extends State<OptimusXHomePage> with SingleTickerPr
   double _obstacleDistance = 500.0; // in cm
 
   DateTime? lastUpdated;
-  
+
   bool isLoading = false;
   String errorMessage = '';
   int fetchCount = 0;
@@ -8148,7 +9186,7 @@ class _OptimusXHomePageState extends State<OptimusXHomePage> with SingleTickerPr
   void initState() {
     super.initState();
     _startPolling();
-    
+
     _dataUpdateTimer = Timer.periodic(Duration(seconds: 3), (timer) {
       if (mounted) {
         setState(() {
@@ -8162,7 +9200,7 @@ class _OptimusXHomePageState extends State<OptimusXHomePage> with SingleTickerPr
   void _startPolling() {
     // Fetch immediately
     _fetchSensorData();
-    
+
     // Then fetch every 5 seconds
     _timer = Timer.periodic(Duration(seconds: 5), (Timer t) {
       _fetchSensorData();
@@ -8171,7 +9209,7 @@ class _OptimusXHomePageState extends State<OptimusXHomePage> with SingleTickerPr
 
   Future<void> _fetchSensorData() async {
     if (isLoading) return;
-    
+
     setState(() {
       isLoading = true;
       errorMessage = '';
@@ -8180,10 +9218,10 @@ class _OptimusXHomePageState extends State<OptimusXHomePage> with SingleTickerPr
     try {
       DatabaseEvent event = await _sensorRef.once();
       DataSnapshot snapshot = event.snapshot;
-      
+
       if (snapshot.exists) {
         final data = Map<String, dynamic>.from(snapshot.value as Map);
-        
+
         setState(() {
           // Parse sensor values with safety checks
           tdsValue = _parseDouble(data['Tds value']);
@@ -8193,15 +9231,16 @@ class _OptimusXHomePageState extends State<OptimusXHomePage> with SingleTickerPr
           pHValue = _parseDouble(data['pHValue']);
           _obstacleDistance = _parseDouble(data['ultrasonic']);
           lastUpdated = DateTime.now();
-          if(temperature == -127){
+          if (temperature == -127) {
             temperature = 26;
           }
           fetchCount++;
           isLoading = false;
         });
-        
+
         print('Sensor data fetched at ${DateTime.now()}');
-        print('TDS: $tdsValue, Temp: $temperature, Turbidity: $turbidity, Gas: $gasValue, pH: $pHValue');
+        print(
+            'TDS: $tdsValue, Temp: $temperature, Turbidity: $turbidity, Gas: $gasValue, pH: $pHValue');
       } else {
         setState(() {
           errorMessage = 'No sensor data found in database';
@@ -8234,65 +9273,98 @@ class _OptimusXHomePageState extends State<OptimusXHomePage> with SingleTickerPr
     _batteryLevel = (80 + random.nextDouble() * 15).clamp(0, 100);
     _solarVoltage = 18 + random.nextDouble() * 2;
   }
-Widget _getScreenForIndex(int index) {
-  switch (index) {
-    case 0: return _buildDashboard();
-    case 1: return BotDetailsScreen(onNext: () => setState(() => _selectedIndex = 2));
-    case 2: return DualConveyorControlScreen(
-      conveyor1Speed: _conveyor1Speed,
-      conveyor2Speed: _conveyor2Speed,
-      shredderActive: _shredderActive,
-      compactorActive: _compactorActive,
-      onSpeedChange: (c1, c2, shred, comp) {
-        setState(() {
-          _conveyor1Speed = c1;
-          _conveyor2Speed = c2;
-          _shredderActive = shred;
-          _compactorActive = comp;
+
+  Widget _getScreenForIndex(int index) {
+    switch (index) {
+      case 0:
+        return _buildDashboard();
+      case 1:
+        return BotDetailsScreen(
+            onNext: () => setState(() => _selectedIndex = 2));
+      case 2:
+        return DualConveyorControlScreen(
+          conveyor1Speed: _conveyor1Speed,
+          conveyor2Speed: _conveyor2Speed,
+          shredderActive: _shredderActive,
+          compactorActive: _compactorActive,
+          onSpeedChange: (c1, c2, shred, comp) {
+            setState(() {
+              _conveyor1Speed = c1;
+              _conveyor2Speed = c2;
+              _shredderActive = shred;
+              _compactorActive = comp;
+            });
+          },
+          onNext: () => setState(() => _selectedIndex = 3),
+        );
+      case 3:
+        return LiveTrashAnalyticsScreen(
+          trashCollected: _trashCollected,
+          onNext: () => setState(() => _selectedIndex = 4),
+        );
+      case 4:
+        return HyacinthProcessingScreen(
+          hyacinthProcessed: _hyacinthProcessed,
+          onNext: () => setState(() => _selectedIndex = 5),
+        );
+      case 5:
+        return ObstacleDetectionScreen(
+          obstacleDistance:
+              _obstacleDistance, // ADD THIS LINE - pass the real data
+          onNext: () => setState(() => _selectedIndex = 6),
+        );
+      case 6:
+        return FloodRiskAlertScreen(
+          waterLevel: _batteryLevel,
+          onNext: () => setState(() => _selectedIndex = 7),
+        );
+      case 7:
+        return SmartChargingScreen(
+          batteryLevel: _batteryLevel,
+          solarVoltage: _solarVoltage,
+          onNext: () => setState(() => _selectedIndex = 8),
+        );
+      case 8:
+        return AIVisionScreen(onNext: () => setState(() => _selectedIndex = 9));
+      case 9:
+        return PHTestingScreen(
+            phLevel: pHValue,
+            onNext: () => setState(() => _selectedIndex = 10));
+      case 10:
+        return TurbidityTestingScreen(
+            turbidity: turbidity,
+            onNext: () => setState(() => _selectedIndex = 11));
+      case 11:
+        return TDSTestingScreen(
+            tds: tdsValue, onNext: () => setState(() => _selectedIndex = 12));
+      case 12:
+        return EcoDisposalMethodsScreen(
+            onNext: () => setState(() => _selectedIndex = 13));
+      case 13:
+        return PredictiveAnalyticsScreen(
+            onNext: () => setState(() => _selectedIndex = 14));
+      case 14:
+        return FleetManagementScreen(
+            onNext: () => setState(() => _selectedIndex = 15));
+      case 15:
+        return CitizenPortalScreen(
+            onNext: () => setState(() => _selectedIndex = 16));
+      case 16:
+        return ContactScreen(onNext: () => setState(() => _selectedIndex = 17));
+      case 17:
+        return JudgesFAQScreen(
+            onNext: () => setState(() => _selectedIndex = 18));
+      case 18:
+        return LogoutScreen(onLogoutComplete: () {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => LoginScreen()),
+          );
         });
-      },
-      onNext: () => setState(() => _selectedIndex = 3),
-    );
-    case 3: return LiveTrashAnalyticsScreen(
-      trashCollected: _trashCollected,
-      onNext: () => setState(() => _selectedIndex = 4),
-    );
-    case 4: return HyacinthProcessingScreen(
-      hyacinthProcessed: _hyacinthProcessed,
-      onNext: () => setState(() => _selectedIndex = 5),
-    );
-    case 5: return ObstacleDetectionScreen(
-      obstacleDistance: _obstacleDistance, // ADD THIS LINE - pass the real data
-      onNext: () => setState(() => _selectedIndex = 6),
-    );
-    case 6: return FloodRiskAlertScreen(
-      waterLevel: _batteryLevel,
-      onNext: () => setState(() => _selectedIndex = 7),
-    );
-    case 7: return SmartChargingScreen(
-      batteryLevel: _batteryLevel,
-      solarVoltage: _solarVoltage,
-      onNext: () => setState(() => _selectedIndex = 8),
-    );
-    case 8: return AIVisionScreen(onNext: () => setState(() => _selectedIndex = 9));
-    case 9: return PHTestingScreen(phLevel: pHValue, onNext: () => setState(() => _selectedIndex = 10));
-    case 10: return TurbidityTestingScreen(turbidity: turbidity, onNext: () => setState(() => _selectedIndex = 11));
-    case 11: return TDSTestingScreen(tds: tdsValue, onNext: () => setState(() => _selectedIndex = 12));
-    case 12: return EcoDisposalMethodsScreen(onNext: () => setState(() => _selectedIndex = 13));
-    case 13: return PredictiveAnalyticsScreen(onNext: () => setState(() => _selectedIndex = 14));
-    case 14: return FleetManagementScreen(onNext: () => setState(() => _selectedIndex = 15));
-    case 15: return CitizenPortalScreen(onNext: () => setState(() => _selectedIndex = 16));
-    case 16: return ContactScreen(onNext: () => setState(() => _selectedIndex = 17));
-    case 17: return JudgesFAQScreen(onNext: () => setState(() => _selectedIndex = 18));
-    case 18: return LogoutScreen(onLogoutComplete: () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => LoginScreen()),
-      );
-    });
-    default: return _buildDashboard();
+      default:
+        return _buildDashboard();
+    }
   }
-}
 
   Widget _buildDashboard() {
     return SingleChildScrollView(
@@ -8317,7 +9389,8 @@ Widget _getScreenForIndex(int index) {
                   offset: Offset(0, 6),
                 )
               ],
-              border: Border.all(color: Colors.blueAccent.withOpacity(0.2), width: 1),
+              border: Border.all(
+                  color: Colors.blueAccent.withOpacity(0.2), width: 1),
             ),
             child: Column(
               children: [
@@ -8362,16 +9435,28 @@ Widget _getScreenForIndex(int index) {
                           padding: EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
-                              colors: _isRobotOn 
-                                  ? [Colors.greenAccent.withOpacity(0.3), Colors.green.withOpacity(0.1)]
-                                  : [Colors.redAccent.withOpacity(0.3), Colors.red.withOpacity(0.1)],
+                              colors: _isRobotOn
+                                  ? [
+                                      Colors.greenAccent.withOpacity(0.3),
+                                      Colors.green.withOpacity(0.1)
+                                    ]
+                                  : [
+                                      Colors.redAccent.withOpacity(0.3),
+                                      Colors.red.withOpacity(0.1)
+                                    ],
                             ),
                             shape: BoxShape.circle,
-                            border: Border.all(color: _isRobotOn ? Colors.greenAccent : Colors.redAccent, width: 2),
+                            border: Border.all(
+                                color: _isRobotOn
+                                    ? Colors.greenAccent
+                                    : Colors.redAccent,
+                                width: 2),
                           ),
                           child: Icon(
                             _isRobotOn ? Icons.verified : Icons.error,
-                            color: _isRobotOn ? Colors.greenAccent : Colors.redAccent,
+                            color: _isRobotOn
+                                ? Colors.greenAccent
+                                : Colors.redAccent,
                             size: 30,
                           ),
                         ),
@@ -8384,25 +9469,37 @@ Widget _getScreenForIndex(int index) {
                             });
                           },
                           child: Container(
-                            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
-                              color: _isRobotOn ? Colors.greenAccent.withOpacity(0.2) : Colors.redAccent.withOpacity(0.2),
+                              color: _isRobotOn
+                                  ? Colors.greenAccent.withOpacity(0.2)
+                                  : Colors.redAccent.withOpacity(0.2),
                               borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: _isRobotOn ? Colors.greenAccent : Colors.redAccent),
+                              border: Border.all(
+                                  color: _isRobotOn
+                                      ? Colors.greenAccent
+                                      : Colors.redAccent),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  _isRobotOn ? Icons.power_settings_new : Icons.power_off,
-                                  color: _isRobotOn ? Colors.greenAccent : Colors.redAccent,
+                                  _isRobotOn
+                                      ? Icons.power_settings_new
+                                      : Icons.power_off,
+                                  color: _isRobotOn
+                                      ? Colors.greenAccent
+                                      : Colors.redAccent,
                                   size: 14,
                                 ),
                                 SizedBox(width: 4),
                                 Text(
                                   _isRobotOn ? 'ON' : 'OFF',
                                   style: TextStyle(
-                                    color: _isRobotOn ? Colors.greenAccent : Colors.redAccent,
+                                    color: _isRobotOn
+                                        ? Colors.greenAccent
+                                        : Colors.redAccent,
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -8419,17 +9516,23 @@ Widget _getScreenForIndex(int index) {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildFuturisticStatCard('Bots Active', '8', Icons.engineering, Colors.cyanAccent),
-                    _buildFuturisticStatCard('Trash Collected', '${_trashCollected}kg', Icons.cleaning_services, Colors.greenAccent),
-                    _buildFuturisticStatCard('Efficiency', '94%', Icons.auto_awesome, Colors.orangeAccent),
+                    _buildFuturisticStatCard('Bots Active', '8',
+                        Icons.engineering, Colors.cyanAccent),
+                    _buildFuturisticStatCard(
+                        'Trash Collected',
+                        '${_trashCollected}kg',
+                        Icons.cleaning_services,
+                        Colors.greenAccent),
+                    _buildFuturisticStatCard('Efficiency', '94%',
+                        Icons.auto_awesome, Colors.orangeAccent),
                   ],
                 ),
               ],
             ),
           ),
-          
+
           SizedBox(height: 20),
-          
+
           // System Control Card
           Container(
             padding: EdgeInsets.all(20),
@@ -8447,27 +9550,30 @@ Widget _getScreenForIndex(int index) {
                   offset: Offset(0, 4),
                 )
               ],
-              border: Border.all(color: Colors.purpleAccent.withOpacity(0.1), width: 1),
+              border: Border.all(
+                  color: Colors.purpleAccent.withOpacity(0.1), width: 1),
             ),
             child: Column(
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('System Control', style: TextStyle(
-                      color: Colors.white, 
-                      fontSize: 18, 
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.1,
-                    )),
+                    Text('System Control',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.1,
+                        )),
                     Row(
                       children: [
                         AnimatedContainer(
                           duration: Duration(milliseconds: 300),
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
-                              colors: _isRobotOn 
+                              colors: _isRobotOn
                                   ? [Colors.greenAccent, Colors.green]
                                   : [Colors.redAccent, Colors.red],
                             ),
@@ -8494,9 +9600,11 @@ Widget _getScreenForIndex(int index) {
                               });
                             },
                             activeColor: Colors.greenAccent,
-                            activeTrackColor: Colors.greenAccent.withOpacity(0.5),
+                            activeTrackColor:
+                                Colors.greenAccent.withOpacity(0.5),
                             inactiveThumbColor: Colors.redAccent,
-                            inactiveTrackColor: Colors.redAccent.withOpacity(0.5),
+                            inactiveTrackColor:
+                                Colors.redAccent.withOpacity(0.5),
                           ),
                         ),
                       ],
@@ -8509,9 +9617,14 @@ Widget _getScreenForIndex(int index) {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Battery Level', style: TextStyle(color: Colors.white70, fontSize: 14)),
-                        Text('${_batteryLevel.toStringAsFixed(1)}%', 
-                             style: TextStyle(color: _getBatteryColor(_batteryLevel), fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text('Battery Level',
+                            style:
+                                TextStyle(color: Colors.white70, fontSize: 14)),
+                        Text('${_batteryLevel.toStringAsFixed(1)}%',
+                            style: TextStyle(
+                                color: _getBatteryColor(_batteryLevel),
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold)),
                       ],
                     ),
                     SizedBox(height: 8),
@@ -8527,7 +9640,9 @@ Widget _getScreenForIndex(int index) {
                         AnimatedContainer(
                           duration: Duration(milliseconds: 500),
                           height: 8,
-                          width: MediaQuery.of(context).size.width * (_batteryLevel / 100) * 0.7,
+                          width: MediaQuery.of(context).size.width *
+                              (_batteryLevel / 100) *
+                              0.7,
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
@@ -8538,7 +9653,8 @@ Widget _getScreenForIndex(int index) {
                             borderRadius: BorderRadius.circular(4),
                             boxShadow: [
                               BoxShadow(
-                                color: _getBatteryColor(_batteryLevel).withOpacity(0.3),
+                                color: _getBatteryColor(_batteryLevel)
+                                    .withOpacity(0.3),
                                 blurRadius: 8,
                                 spreadRadius: 1,
                               )
@@ -8553,17 +9669,23 @@ Widget _getScreenForIndex(int index) {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _buildMiniMetric('Solar', '${_solarVoltage.toStringAsFixed(1)}V', Icons.wb_sunny, Colors.orangeAccent),
-                    _buildMiniMetric('Gas', '${gasValue.toStringAsFixed(1)}', Icons.air, Colors.greenAccent),
-                    _buildMiniMetric('pH', pHValue.toStringAsFixed(1), Icons.science, _getPHColor(pHValue)),
+                    _buildMiniMetric(
+                        'Solar',
+                        '${_solarVoltage.toStringAsFixed(1)}V',
+                        Icons.wb_sunny,
+                        Colors.orangeAccent),
+                    _buildMiniMetric('Gas', '${gasValue.toStringAsFixed(1)}',
+                        Icons.air, Colors.greenAccent),
+                    _buildMiniMetric('pH', pHValue.toStringAsFixed(1),
+                        Icons.science, _getPHColor(pHValue)),
                   ],
                 ),
               ],
             ),
           ),
-          
+
           SizedBox(height: 20),
-          
+
           // Quick Actions Section (unchanged)
           Container(
             padding: EdgeInsets.all(16),
@@ -8586,7 +9708,8 @@ Widget _getScreenForIndex(int index) {
                   decoration: BoxDecoration(
                     color: Color(0xFF1E1E2C),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.blueAccent.withOpacity(0.3), width: 1),
+                    border: Border.all(
+                        color: Colors.blueAccent.withOpacity(0.3), width: 1),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.blueAccent.withOpacity(0.1),
@@ -8603,7 +9726,8 @@ Widget _getScreenForIndex(int index) {
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.engineering, color: Colors.blueAccent, size: 20),
+                            Icon(Icons.engineering,
+                                color: Colors.blueAccent, size: 20),
                             SizedBox(width: 8),
                             Text(
                               'Bot Details',
@@ -8617,11 +9741,13 @@ Widget _getScreenForIndex(int index) {
                         ),
                         SizedBox(height: 8),
                         Container(
-                          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
                             color: Colors.blueAccent.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.blueAccent.withOpacity(0.2)),
+                            border: Border.all(
+                                color: Colors.blueAccent.withOpacity(0.2)),
                           ),
                           child: Text(
                             'Robot Specifications',
@@ -8641,7 +9767,7 @@ Widget _getScreenForIndex(int index) {
           ),
 
           SizedBox(height: 20),
-          
+
           // Ecosystem Metrics - Using only real sensor data
           Container(
             padding: EdgeInsets.all(20),
@@ -8652,7 +9778,8 @@ Widget _getScreenForIndex(int index) {
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.blueAccent.withOpacity(0.1), width: 1),
+              border: Border.all(
+                  color: Colors.blueAccent.withOpacity(0.1), width: 1),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -8675,21 +9802,26 @@ Widget _getScreenForIndex(int index) {
                         color: Colors.greenAccent.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(Icons.sensors, color: Colors.greenAccent, size: 16),
+                      child: Icon(Icons.sensors,
+                          color: Colors.greenAccent, size: 16),
                     ),
                   ],
                 ),
                 SizedBox(height: 15),
-                _buildFuturisticMetricRow('Temperature', temperature, '°C', Colors.orangeAccent, Icons.thermostat),
-                _buildFuturisticMetricRow('pH Level', pHValue, '', _getPHColor(pHValue), Icons.science),
-                _buildFuturisticMetricRow('Turbidity', turbidity, 'NTU', Colors.blueAccent, Icons.opacity),
-                _buildFuturisticMetricRow('TDS', tdsValue, 'ppm', Colors.purpleAccent, Icons.linear_scale),
+                _buildFuturisticMetricRow('Temperature', temperature, '°C',
+                    Colors.orangeAccent, Icons.thermostat),
+                _buildFuturisticMetricRow('pH Level', pHValue, '',
+                    _getPHColor(pHValue), Icons.science),
+                _buildFuturisticMetricRow('Turbidity', turbidity, 'NTU',
+                    Colors.blueAccent, Icons.opacity),
+                _buildFuturisticMetricRow('TDS', tdsValue, 'ppm',
+                    Colors.purpleAccent, Icons.linear_scale),
               ],
             ),
           ),
-          
+
           SizedBox(height: 20),
-          
+
           // Next Page Button
           Container(
             width: double.infinity,
@@ -8740,7 +9872,7 @@ Widget _getScreenForIndex(int index) {
               ),
             ),
           ),
-          
+
           SizedBox(height: 20),
         ],
       ),
@@ -8760,7 +9892,8 @@ Widget _getScreenForIndex(int index) {
     }
   }
 
-  Widget _buildFuturisticStatCard(String title, String value, IconData icon, Color color) {
+  Widget _buildFuturisticStatCard(
+      String title, String value, IconData icon, Color color) {
     return Container(
       padding: EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -8783,23 +9916,26 @@ Widget _getScreenForIndex(int index) {
             child: Icon(icon, color: color, size: 24),
           ),
           SizedBox(height: 8),
-          Text(value, style: TextStyle(
-            color: Colors.white, 
-            fontSize: 16, 
-            fontWeight: FontWeight.bold,
-            fontFeatures: [FontFeature.tabularFigures()],
-          )),
-          Text(title, style: TextStyle(
-            color: Colors.white70, 
-            fontSize: 10,
-            letterSpacing: 0.8,
-          )),
+          Text(value,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                fontFeatures: [FontFeature.tabularFigures()],
+              )),
+          Text(title,
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 10,
+                letterSpacing: 0.8,
+              )),
         ],
       ),
     );
   }
 
-  Widget _buildFuturisticMetricRow(String label, double value, String unit, Color color, IconData icon) {
+  Widget _buildFuturisticMetricRow(
+      String label, double value, String unit, Color color, IconData icon) {
     return Container(
       margin: EdgeInsets.only(bottom: 12),
       padding: EdgeInsets.all(12),
@@ -8820,12 +9956,12 @@ Widget _getScreenForIndex(int index) {
           ),
           SizedBox(width: 12),
           Expanded(
-            child: Text(label, 
+            child: Text(label,
                 style: TextStyle(color: Colors.white70, fontSize: 14)),
           ),
-          Text('${value.toStringAsFixed(1)}$unit', 
+          Text('${value.toStringAsFixed(1)}$unit',
               style: TextStyle(
-                color: color, 
+                color: color,
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
                 fontFeatures: [FontFeature.tabularFigures()],
@@ -8843,9 +9979,8 @@ Widget _getScreenForIndex(int index) {
               widthFactor: value / (label == 'TDS' ? 1000 : 100),
               child: Container(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [color, color.withOpacity(0.7)]
-                  ),
+                  gradient:
+                      LinearGradient(colors: [color, color.withOpacity(0.7)]),
                   borderRadius: BorderRadius.circular(3),
                   boxShadow: [
                     BoxShadow(
@@ -8863,7 +9998,8 @@ Widget _getScreenForIndex(int index) {
     );
   }
 
-  Widget _buildMiniMetric(String title, String value, IconData icon, Color color) {
+  Widget _buildMiniMetric(
+      String title, String value, IconData icon, Color color) {
     return Column(
       children: [
         Row(
@@ -8874,7 +10010,9 @@ Widget _getScreenForIndex(int index) {
           ],
         ),
         SizedBox(height: 4),
-        Text(value, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+        Text(value,
+            style: TextStyle(
+                color: color, fontSize: 12, fontWeight: FontWeight.bold)),
       ],
     );
   }
@@ -8896,19 +10034,24 @@ Widget _getScreenForIndex(int index) {
     return Scaffold(
       backgroundColor: Color(0xFF0A0E21),
       appBar: AppBar(
-        title: Text(_titles[_selectedIndex], 
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1.1)),
+        title: Text(_titles[_selectedIndex],
+            style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                letterSpacing: 1.1)),
         backgroundColor: Color(0xFF1A237E),
         elevation: 0,
         centerTitle: true,
         iconTheme: IconThemeData(color: Colors.white),
-        actions: _selectedIndex == 0 ? [
-          IconButton(
-            icon: Icon(Icons.refresh, color: Colors.white),
-            onPressed: _fetchSensorData,
-            tooltip: 'Refresh Sensor Data',
-          ),
-        ] : null,
+        actions: _selectedIndex == 0
+            ? [
+                IconButton(
+                  icon: Icon(Icons.refresh, color: Colors.white),
+                  onPressed: _fetchSensorData,
+                  tooltip: 'Refresh Sensor Data',
+                ),
+              ]
+            : null,
       ),
       drawer: _buildDrawer(),
       body: _getScreenForIndex(_selectedIndex),
@@ -8934,19 +10077,26 @@ Widget _getScreenForIndex(int index) {
               children: [
                 Icon(Icons.auto_awesome, size: 48, color: Colors.white),
                 SizedBox(height: 10),
-                Text('OPTIMUS-X', 
-                    style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-                Text('Admin Dashboard', style: TextStyle(color: Colors.white70)),
+                Text('OPTIMUS-X',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold)),
+                Text('Admin Dashboard',
+                    style: TextStyle(color: Colors.white70)),
               ],
             ),
           ),
           ...List.generate(_titles.length, (index) {
             return ListTile(
               leading: Icon(_getIconForIndex(index), color: Colors.blueAccent),
-              title: Text(_titles[index], style: TextStyle(color: Colors.white)),
+              title:
+                  Text(_titles[index], style: TextStyle(color: Colors.white)),
               selected: _selectedIndex == index,
               onTap: () => _onSelectItem(index),
-              tileColor: _selectedIndex == index ? Colors.blueAccent.withOpacity(0.1) : null,
+              tileColor: _selectedIndex == index
+                  ? Colors.blueAccent.withOpacity(0.1)
+                  : null,
             );
           }),
         ],
@@ -8956,27 +10106,48 @@ Widget _getScreenForIndex(int index) {
 
   IconData _getIconForIndex(int index) {
     switch (index) {
-      case 0: return Icons.dashboard;
-      case 1: return Icons.engineering;
-      case 2: return Icons.conveyor_belt;
-      case 3: return Icons.analytics;
-      case 4: return Icons.grass;
-      case 5: return Icons.warning;
-      case 6: return Icons.flood;
-      case 7: return Icons.bolt;
-      case 8: return Icons.camera_alt;
-      case 9: return Icons.air;
-      case 10: return Icons.science;
-      case 11: return Icons.opacity;
-      case 12: return Icons.water;
-      case 13: return Icons.recycling;
-      case 14: return Icons.trending_up;
-      case 15: return Icons.directions_boat;
-      case 16: return Icons.people;
-      case 17: return Icons.contact_page;
-      case 18: return Icons.quiz;
-      case 19: return Icons.logout;
-      default: return Icons.circle;
+      case 0:
+        return Icons.dashboard;
+      case 1:
+        return Icons.engineering;
+      case 2:
+        return Icons.conveyor_belt;
+      case 3:
+        return Icons.analytics;
+      case 4:
+        return Icons.grass;
+      case 5:
+        return Icons.warning;
+      case 6:
+        return Icons.flood;
+      case 7:
+        return Icons.bolt;
+      case 8:
+        return Icons.camera_alt;
+      case 9:
+        return Icons.air;
+      case 10:
+        return Icons.science;
+      case 11:
+        return Icons.opacity;
+      case 12:
+        return Icons.water;
+      case 13:
+        return Icons.recycling;
+      case 14:
+        return Icons.trending_up;
+      case 15:
+        return Icons.directions_boat;
+      case 16:
+        return Icons.people;
+      case 17:
+        return Icons.contact_page;
+      case 18:
+        return Icons.quiz;
+      case 19:
+        return Icons.logout;
+      default:
+        return Icons.circle;
     }
   }
 
@@ -8987,6 +10158,7 @@ Widget _getScreenForIndex(int index) {
     super.dispose();
   }
 }
+
 class BotDetailsScreen extends StatelessWidget {
   final VoidCallback onNext;
 
@@ -9012,8 +10184,11 @@ class BotDetailsScreen extends StatelessWidget {
                   children: [
                     Icon(Icons.engineering, size: 40, color: Colors.white),
                     SizedBox(width: 10),
-                    Text('Fleet Management', 
-                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    Text('Fleet Management',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
                 Text('8 Active Bots', style: TextStyle(color: Colors.white70)),
@@ -9031,32 +10206,41 @@ class BotDetailsScreen extends StatelessWidget {
               ),
               itemCount: 8,
               itemBuilder: (context, index) {
-                final botStatus = ['Active', 'Charging', 'Maintenance'][index % 3];
+                final botStatus =
+                    ['Active', 'Charging', 'Maintenance'][index % 3];
                 final batteryLevel = 20 + Random().nextInt(80);
                 return Card(
                   color: Color(0xFF1E1E2C),
                   child: InkWell(
-                    onTap: () => _showBotDetails(context, index + 1, botStatus, batteryLevel),
+                    onTap: () => _showBotDetails(
+                        context, index + 1, botStatus, batteryLevel),
                     child: Column(
                       children: [
                         Expanded(
                           child: Container(
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
-                                colors: [Colors.blueAccent.withOpacity(0.3), Colors.tealAccent.withOpacity(0.1)],
+                                colors: [
+                                  Colors.blueAccent.withOpacity(0.3),
+                                  Colors.tealAccent.withOpacity(0.1)
+                                ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
-                              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+                              borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(12)),
                             ),
                             child: Center(
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(Icons.engineering, size: 50, color: Colors.blueAccent),
+                                  Icon(Icons.engineering,
+                                      size: 50, color: Colors.blueAccent),
                                   SizedBox(height: 10),
-                                  Text('OPTIMUS-${index + 1}', 
-                                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                  Text('OPTIMUS-${index + 1}',
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold)),
                                 ],
                               ),
                             ),
@@ -9067,17 +10251,24 @@ class BotDetailsScreen extends StatelessWidget {
                           child: Column(
                             children: [
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text('Status', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                  Text('Status',
+                                      style: TextStyle(
+                                          color: Colors.white70, fontSize: 12)),
                                   Container(
-                                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: _getStatusColor(botStatus).withOpacity(0.2),
+                                      color: _getStatusColor(botStatus)
+                                          .withOpacity(0.2),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    child: Text(botStatus, 
-                                        style: TextStyle(color: _getStatusColor(botStatus), fontSize: 10)),
+                                    child: Text(botStatus,
+                                        style: TextStyle(
+                                            color: _getStatusColor(botStatus),
+                                            fontSize: 10)),
                                   ),
                                 ],
                               ),
@@ -9085,10 +10276,13 @@ class BotDetailsScreen extends StatelessWidget {
                               LinearProgressIndicator(
                                 value: batteryLevel / 100,
                                 backgroundColor: Colors.white24,
-                                color: _getBatteryColor(batteryLevel.toDouble()),
+                                color:
+                                    _getBatteryColor(batteryLevel.toDouble()),
                               ),
                               SizedBox(height: 5),
-                              Text('$batteryLevel%', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                              Text('$batteryLevel%',
+                                  style: TextStyle(
+                                      color: Colors.white70, fontSize: 12)),
                             ],
                           ),
                         ),
@@ -9118,10 +10312,14 @@ class BotDetailsScreen extends StatelessWidget {
 
   Color _getStatusColor(String status) {
     switch (status) {
-      case 'Active': return Colors.greenAccent;
-      case 'Charging': return Colors.orangeAccent;
-      case 'Maintenance': return Colors.redAccent;
-      default: return Colors.grey;
+      case 'Active':
+        return Colors.greenAccent;
+      case 'Charging':
+        return Colors.orangeAccent;
+      case 'Maintenance':
+        return Colors.redAccent;
+      default:
+        return Colors.grey;
     }
   }
 
@@ -9131,21 +10329,29 @@ class BotDetailsScreen extends StatelessWidget {
     return Colors.redAccent;
   }
 
-  void _showBotDetails(BuildContext context, int botNumber, String status, int battery) {
+  void _showBotDetails(
+      BuildContext context, int botNumber, String status, int battery) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Color(0xFF1E1E2C),
-        title: Text('OPTIMUS-$botNumber Details', style: TextStyle(color: Colors.white)),
+        title: Text('OPTIMUS-$botNumber Details',
+            style: TextStyle(color: Colors.white)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildDetailRow('Status', status, _getStatusColor(status)),
-              _buildDetailRow('Battery', '$battery%', _getBatteryColor(battery.toDouble())),
-              _buildDetailRow('Location', 'Zone ${['A', 'B', 'C', 'D'][botNumber % 4]}', Colors.blueAccent),
-              _buildDetailRow('Tasks Completed', '${Random().nextInt(100)}', Colors.greenAccent),
-              _buildDetailRow('Uptime', '${120 + Random().nextInt(200)} hours', Colors.orangeAccent),
+              _buildDetailRow(
+                  'Battery', '$battery%', _getBatteryColor(battery.toDouble())),
+              _buildDetailRow(
+                  'Location',
+                  'Zone ${['A', 'B', 'C', 'D'][botNumber % 4]}',
+                  Colors.blueAccent),
+              _buildDetailRow('Tasks Completed', '${Random().nextInt(100)}',
+                  Colors.greenAccent),
+              _buildDetailRow('Uptime', '${120 + Random().nextInt(200)} hours',
+                  Colors.orangeAccent),
             ],
           ),
         ),
@@ -9166,7 +10372,8 @@ class BotDetailsScreen extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: TextStyle(color: Colors.white70)),
-          Text(value, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+          Text(value,
+              style: TextStyle(color: color, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -9178,13 +10385,17 @@ class LiveTrashAnalyticsScreen extends StatefulWidget {
   final int trashCollected;
   final VoidCallback onNext;
 
-  const LiveTrashAnalyticsScreen({Key? key, required this.trashCollected, required this.onNext}) : super(key: key);
+  const LiveTrashAnalyticsScreen(
+      {Key? key, required this.trashCollected, required this.onNext})
+      : super(key: key);
 
   @override
-  _LiveTrashAnalyticsScreenState createState() => _LiveTrashAnalyticsScreenState();
+  _LiveTrashAnalyticsScreenState createState() =>
+      _LiveTrashAnalyticsScreenState();
 }
 
-class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> with SingleTickerProviderStateMixin {
+class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _progressAnimation;
   int _animatedTrashCount = 0;
@@ -9199,7 +10410,7 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
       duration: Duration(seconds: 2),
       vsync: this,
     );
-    
+
     _progressAnimation = Tween<double>(
       begin: 0,
       end: widget.trashCollected.toDouble(),
@@ -9265,34 +10476,53 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
                         color: Colors.white.withOpacity(0.1),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(Icons.analytics, size: 32, color: Colors.white),
+                      child:
+                          Icon(Icons.analytics, size: 32, color: Colors.white),
                     ),
                     SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Live Trash Analytics', 
-                              style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                          Text('Live Trash Analytics',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold)),
                           Text('Real-time monitoring dashboard',
-                              style: TextStyle(color: Colors.white70, fontSize: 12)),
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 12)),
                         ],
                       ),
                     ),
                     Container(
-                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: _isRealTime ? Colors.greenAccent.withOpacity(0.2) : Colors.orangeAccent.withOpacity(0.2),
+                        color: _isRealTime
+                            ? Colors.greenAccent.withOpacity(0.2)
+                            : Colors.orangeAccent.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: _isRealTime ? Colors.greenAccent : Colors.orangeAccent),
+                        border: Border.all(
+                            color: _isRealTime
+                                ? Colors.greenAccent
+                                : Colors.orangeAccent),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.circle, size: 8, color: _isRealTime ? Colors.greenAccent : Colors.orangeAccent),
+                          Icon(Icons.circle,
+                              size: 8,
+                              color: _isRealTime
+                                  ? Colors.greenAccent
+                                  : Colors.orangeAccent),
                           SizedBox(width: 6),
-                          Text(_isRealTime ? 'LIVE' : 'PAUSED', 
-                              style: TextStyle(color: _isRealTime ? Colors.greenAccent : Colors.orangeAccent, fontSize: 12)),
+                          Text(_isRealTime ? 'LIVE' : 'PAUSED',
+                              style: TextStyle(
+                                  color: _isRealTime
+                                      ? Colors.greenAccent
+                                      : Colors.orangeAccent,
+                                  fontSize: 12)),
                         ],
                       ),
                     ),
@@ -9303,7 +10533,7 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
               ],
             ),
           ),
-          
+
           // Main Analytics Grid
           Expanded(
             child: Padding(
@@ -9355,15 +10585,15 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
                       ],
                     ),
                     SizedBox(height: 16),
-                    
+
                     // Progress Analytics Card
                     _buildProgressCard(),
                     SizedBox(height: 16),
-                    
+
                     // Efficiency Breakdown Card
                     _buildEfficiencyCard(),
                     SizedBox(height: 16),
-                    
+
                     // Collection Timeline
                     _buildTimelineCard(),
                   ],
@@ -9371,7 +10601,7 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
               ),
             ),
           ),
-          
+
           // Control Panel
           Container(
             padding: EdgeInsets.all(16),
@@ -9384,23 +10614,24 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildControlButton(Icons.refresh, 'Refresh', Colors.blueAccent, () {
+                    _buildControlButton(
+                        Icons.refresh, 'Refresh', Colors.blueAccent, () {
                       setState(() {
                         _animationController.reset();
                         _animationController.forward();
                       });
                     }),
                     _buildControlButton(
-                      _isRealTime ? Icons.pause : Icons.play_arrow, 
-                      _isRealTime ? 'Pause' : 'Resume', 
-                      _isRealTime ? Colors.orangeAccent : Colors.greenAccent, 
-                      () {
-                        setState(() {
-                          _isRealTime = !_isRealTime;
-                        });
-                      }
-                    ),
-                    _buildControlButton(Icons.download, 'Export', Colors.purpleAccent, () {
+                        _isRealTime ? Icons.pause : Icons.play_arrow,
+                        _isRealTime ? 'Pause' : 'Resume',
+                        _isRealTime ? Colors.orangeAccent : Colors.greenAccent,
+                        () {
+                      setState(() {
+                        _isRealTime = !_isRealTime;
+                      });
+                    }),
+                    _buildControlButton(
+                        Icons.download, 'Export', Colors.purpleAccent, () {
                       _showExportDialog(context);
                     }),
                   ],
@@ -9451,13 +10682,18 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
       children: [
         Icon(icon, size: 16, color: Colors.white70),
         SizedBox(height: 4),
-        Text(value, style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+        Text(value,
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold)),
         Text(label, style: TextStyle(color: Colors.white70, fontSize: 10)),
       ],
     );
   }
 
-  Widget _buildMetricCard(String title, String value, IconData icon, Color color, String subtitle, Color textColor) {
+  Widget _buildMetricCard(String title, String value, IconData icon,
+      Color color, String subtitle, Color textColor) {
     return Container(
       decoration: BoxDecoration(
         color: Color(0xFF1E1E2C),
@@ -9492,8 +10728,13 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
             ),
             SizedBox(height: 8),
             Text(title, style: TextStyle(color: Colors.white70, fontSize: 12)),
-            Text(value, style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold)),
-            Text(subtitle, style: TextStyle(color: Colors.white54, fontSize: 10)),
+            Text(value,
+                style: TextStyle(
+                    color: textColor,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold)),
+            Text(subtitle,
+                style: TextStyle(color: Colors.white54, fontSize: 10)),
           ],
         ),
       ),
@@ -9515,16 +10756,24 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
               children: [
                 Icon(Icons.timeline, color: Colors.blueAccent, size: 20),
                 SizedBox(width: 8),
-                Text('Collection Progress', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                Text('Collection Progress',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
               ],
             ),
             SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Daily Target: 100kg', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                Text('${(_animatedTrashCount / 100 * 100).toStringAsFixed(0)}%', 
-                    style: TextStyle(color: Colors.blueAccent, fontSize: 14, fontWeight: FontWeight.bold)),
+                Text('Daily Target: 100kg',
+                    style: TextStyle(color: Colors.white70, fontSize: 12)),
+                Text('${(_animatedTrashCount / 100 * 100).toStringAsFixed(0)}%',
+                    style: TextStyle(
+                        color: Colors.blueAccent,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold)),
               ],
             ),
             SizedBox(height: 8),
@@ -9539,8 +10788,10 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('0kg', style: TextStyle(color: Colors.white54, fontSize: 10)),
-                Text('100kg', style: TextStyle(color: Colors.white54, fontSize: 10)),
+                Text('0kg',
+                    style: TextStyle(color: Colors.white54, fontSize: 10)),
+                Text('100kg',
+                    style: TextStyle(color: Colors.white54, fontSize: 10)),
               ],
             ),
           ],
@@ -9564,7 +10815,11 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
               children: [
                 Icon(Icons.analytics, color: Colors.greenAccent, size: 20),
                 SizedBox(width: 8),
-                Text('Efficiency Breakdown', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                Text('Efficiency Breakdown',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
               ],
             ),
             SizedBox(height: 16),
@@ -9585,7 +10840,8 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
         children: [
           Expanded(
             flex: 2,
-            child: Text(label, style: TextStyle(color: Colors.white70, fontSize: 12)),
+            child: Text(label,
+                style: TextStyle(color: Colors.white70, fontSize: 12)),
           ),
           Expanded(
             flex: 5,
@@ -9599,8 +10855,9 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
           ),
           Expanded(
             flex: 1,
-            child: Text('${value.toStringAsFixed(1)}%', 
-                style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+            child: Text('${value.toStringAsFixed(1)}%',
+                style: TextStyle(
+                    color: color, fontSize: 10, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -9622,20 +10879,28 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
               children: [
                 Icon(Icons.history, color: Colors.orangeAccent, size: 20),
                 SizedBox(width: 8),
-                Text('Recent Activity', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                Text('Recent Activity',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
               ],
             ),
             SizedBox(height: 12),
-            _buildTimelineItem('Collection completed', 'Station #4', '2 min ago', Icons.check_circle, Colors.greenAccent),
-            _buildTimelineItem('Maintenance alert', 'Station #7', '5 min ago', Icons.warning, Colors.orangeAccent),
-            _buildTimelineItem('New collection started', 'Station #2', '8 min ago', Icons.play_arrow, Colors.blueAccent),
+            _buildTimelineItem('Collection completed', 'Station #4',
+                '2 min ago', Icons.check_circle, Colors.greenAccent),
+            _buildTimelineItem('Maintenance alert', 'Station #7', '5 min ago',
+                Icons.warning, Colors.orangeAccent),
+            _buildTimelineItem('New collection started', 'Station #2',
+                '8 min ago', Icons.play_arrow, Colors.blueAccent),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTimelineItem(String title, String subtitle, String time, IconData icon, Color color) {
+  Widget _buildTimelineItem(
+      String title, String subtitle, String time, IconData icon, Color color) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Container(
@@ -9647,12 +10912,15 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
         child: Icon(icon, size: 16, color: color),
       ),
       title: Text(title, style: TextStyle(color: Colors.white, fontSize: 12)),
-      subtitle: Text(subtitle, style: TextStyle(color: Colors.white54, fontSize: 10)),
-      trailing: Text(time, style: TextStyle(color: Colors.white54, fontSize: 10)),
+      subtitle:
+          Text(subtitle, style: TextStyle(color: Colors.white54, fontSize: 10)),
+      trailing:
+          Text(time, style: TextStyle(color: Colors.white54, fontSize: 10)),
     );
   }
 
-  Widget _buildControlButton(IconData icon, String label, Color color, VoidCallback onPressed) {
+  Widget _buildControlButton(
+      IconData icon, String label, Color color, VoidCallback onPressed) {
     return Column(
       children: [
         Container(
@@ -9680,7 +10948,8 @@ class _LiveTrashAnalyticsScreenState extends State<LiveTrashAnalyticsScreen> wit
       builder: (context) => AlertDialog(
         backgroundColor: Color(0xFF1E1E2C),
         title: Text('Export Data', style: TextStyle(color: Colors.white)),
-        content: Text('Choose export format:', style: TextStyle(color: Colors.white70)),
+        content: Text('Choose export format:',
+            style: TextStyle(color: Colors.white70)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -9705,7 +10974,9 @@ class HyacinthProcessingScreen extends StatelessWidget {
   final int hyacinthProcessed;
   final VoidCallback onNext;
 
-  const HyacinthProcessingScreen({Key? key, required this.hyacinthProcessed, required this.onNext}) : super(key: key);
+  const HyacinthProcessingScreen(
+      {Key? key, required this.hyacinthProcessed, required this.onNext})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -9728,8 +10999,11 @@ class HyacinthProcessingScreen extends StatelessWidget {
                   children: [
                     Icon(Icons.grass, size: 40, color: Colors.white),
                     SizedBox(width: 10),
-                    Text('Hyacinth Processing', 
-                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    Text('Hyacinth Processing',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
                 SizedBox(height: 10),
@@ -9738,7 +11012,7 @@ class HyacinthProcessingScreen extends StatelessWidget {
               ],
             ),
           ),
-          
+
           // Processing Cards Section - Each in separate row
           Expanded(
             child: Padding(
@@ -9748,64 +11022,54 @@ class HyacinthProcessingScreen extends StatelessWidget {
                   children: [
                     // Processed Today - Single row
                     _buildProcessCard(
-                      'Processed Today', 
-                      '$hyacinthProcessed kg', 
-                      Icons.assessment, 
-                      Colors.greenAccent,
-                      'Current processing volume'
-                    ),
+                        'Processed Today',
+                        '$hyacinthProcessed kg',
+                        Icons.assessment,
+                        Colors.greenAccent,
+                        'Current processing volume'),
                     SizedBox(height: 15),
-                    
+
                     // Shredding Rate - Single row
                     _buildProcessCard(
-                      'Shredding Rate', 
-                      '15 kg/hour', 
-                      Icons.speed, 
-                      Colors.blueAccent,
-                      'Average shredding capacity'
-                    ),
+                        'Shredding Rate',
+                        '15 kg/hour',
+                        Icons.speed,
+                        Colors.blueAccent,
+                        'Average shredding capacity'),
                     SizedBox(height: 15),
-                    
+
                     // Efficiency - Single row
-                    _buildProcessCard(
-                      'Efficiency', 
-                      '92%', 
-                      Icons.auto_awesome, 
-                      Colors.orangeAccent,
-                      'Processing efficiency rate'
-                    ),
+                    _buildProcessCard('Efficiency', '92%', Icons.auto_awesome,
+                        Colors.orangeAccent, 'Processing efficiency rate'),
                     SizedBox(height: 15),
-                    
+
                     // Biogas Output - Single row
                     _buildProcessCard(
-                      'Biogas Output', 
-                      '${(hyacinthProcessed * 0.3).toStringAsFixed(1)} kWh', 
-                      Icons.bolt, 
-                      Colors.yellowAccent,
-                      'Energy generation from biomass'
-                    ),
+                        'Biogas Output',
+                        '${(hyacinthProcessed * 0.3).toStringAsFixed(1)} kWh',
+                        Icons.bolt,
+                        Colors.yellowAccent,
+                        'Energy generation from biomass'),
                     SizedBox(height: 15),
-                    
+
                     // Processing Capacity - Single row
                     _buildProcessCard(
-                      'Processing Capacity', 
-                      '85% Utilized', 
-                      Icons.storage, 
-                      Colors.purpleAccent,
-                      'Current capacity utilization'
-                    ),
+                        'Processing Capacity',
+                        '85% Utilized',
+                        Icons.storage,
+                        Colors.purpleAccent,
+                        'Current capacity utilization'),
                     SizedBox(height: 15),
-                    
+
                     // Quality Score - Single row
                     _buildProcessCard(
-                      'Quality Score', 
-                      '8.7/10', 
-                      Icons.stay_current_portrait_rounded, 
-                      Colors.tealAccent,
-                      'Output quality rating'
-                    ),
+                        'Quality Score',
+                        '8.7/10',
+                        Icons.stay_current_portrait_rounded,
+                        Colors.tealAccent,
+                        'Output quality rating'),
                     SizedBox(height: 15),
-                    
+
                     // Processing Progress Card - Single row
                     Card(
                       color: Color(0xFF1E1E2C),
@@ -9822,17 +11086,25 @@ class HyacinthProcessingScreen extends StatelessWidget {
                                     color: Colors.greenAccent.withOpacity(0.1),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(Icons.timeline, color: Colors.greenAccent),
+                                  child: Icon(Icons.timeline,
+                                      color: Colors.greenAccent),
                                 ),
                                 SizedBox(width: 15),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Text('Daily Target Progress', 
-                                          style: TextStyle(color: Colors.white70, fontSize: 16)),
-                                      Text('${(hyacinthProcessed / 200 * 100).toStringAsFixed(0)}% Complete', 
-                                          style: TextStyle(color: Colors.greenAccent, fontSize: 18, fontWeight: FontWeight.bold)),
+                                      Text('Daily Target Progress',
+                                          style: TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 16)),
+                                      Text(
+                                          '${(hyacinthProcessed / 200 * 100).toStringAsFixed(0)}% Complete',
+                                          style: TextStyle(
+                                              color: Colors.greenAccent,
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold)),
                                     ],
                                   ),
                                 ),
@@ -9842,15 +11114,20 @@ class HyacinthProcessingScreen extends StatelessWidget {
                             LinearProgressIndicator(
                               value: hyacinthProcessed / 200,
                               backgroundColor: Colors.grey[800],
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.greenAccent),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.greenAccent),
                               minHeight: 6,
                             ),
                             SizedBox(height: 5),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('0 kg', style: TextStyle(color: Colors.white54, fontSize: 12)),
-                                Text('200 kg target', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                                Text('0 kg',
+                                    style: TextStyle(
+                                        color: Colors.white54, fontSize: 12)),
+                                Text('200 kg target',
+                                    style: TextStyle(
+                                        color: Colors.white54, fontSize: 12)),
                               ],
                             ),
                           ],
@@ -9862,7 +11139,7 @@ class HyacinthProcessingScreen extends StatelessWidget {
               ),
             ),
           ),
-          
+
           // Action Button Section
           Container(
             padding: EdgeInsets.all(16),
@@ -9875,9 +11152,12 @@ class HyacinthProcessingScreen extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildActionButton(Icons.refresh, 'Refresh', Colors.blueAccent),
-                    _buildActionButton(Icons.analytics, 'Analytics', Colors.greenAccent),
-                    _buildActionButton(Icons.history, 'History', Colors.orangeAccent),
+                    _buildActionButton(
+                        Icons.refresh, 'Refresh', Colors.blueAccent),
+                    _buildActionButton(
+                        Icons.analytics, 'Analytics', Colors.greenAccent),
+                    _buildActionButton(
+                        Icons.history, 'History', Colors.orangeAccent),
                   ],
                 ),
                 SizedBox(height: 15),
@@ -9901,7 +11181,8 @@ class HyacinthProcessingScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildProcessCard(String title, String value, IconData icon, Color color, String subtitle) {
+  Widget _buildProcessCard(
+      String title, String value, IconData icon, Color color, String subtitle) {
     return Card(
       color: Color(0xFF1E1E2C),
       child: Padding(
@@ -9924,11 +11205,15 @@ class HyacinthProcessingScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title, 
-                          style: TextStyle(color: Colors.white70, fontSize: 14)),
+                      Text(title,
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 14)),
                       SizedBox(height: 4),
-                      Text(value, 
-                          style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.bold)),
+                      Text(value,
+                          style: TextStyle(
+                              color: color,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
@@ -9960,6 +11245,7 @@ class HyacinthProcessingScreen extends StatelessWidget {
     );
   }
 }
+
 class ObstacleDetectionScreen extends StatefulWidget {
   final double obstacleDistance;
   final VoidCallback onNext;
@@ -9971,10 +11257,12 @@ class ObstacleDetectionScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  _ObstacleDetectionScreenState createState() => _ObstacleDetectionScreenState();
+  _ObstacleDetectionScreenState createState() =>
+      _ObstacleDetectionScreenState();
 }
 
-class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with SingleTickerProviderStateMixin {
+class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen>
+    with SingleTickerProviderStateMixin {
   late Timer _sensorUpdateTimer;
   double _obstacleDistance = 500.0;
   bool _obstacleDetected = false;
@@ -9985,19 +11273,18 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
   @override
   void initState() {
     super.initState();
-    
+
     // Initialize with REAL data from Firebase
     _obstacleDistance = widget.obstacleDistance;
     _obstacleDetected = _obstacleDistance < 200;
-    
+
     _pulseController = AnimationController(
       duration: Duration(milliseconds: 1500),
       vsync: this,
     )..repeat(reverse: true);
-    
+
     _pulseAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut)
-    );
+        CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut));
 
     // Update with real-time data from parent
     _sensorUpdateTimer = Timer.periodic(Duration(milliseconds: 500), (timer) {
@@ -10013,7 +11300,7 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
     // Use REAL data from Firebase
     _obstacleDistance = widget.obstacleDistance;
     _obstacleDetected = _obstacleDistance < 200;
-    
+
     // Simulate sensor angle (not in Firebase)
     final random = Random();
     _sensorAngle = (-45 + random.nextDouble() * 90).clamp(-45, 45);
@@ -10039,8 +11326,10 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
   }
 
   String _getObstacleDirection() {
-    if (_sensorAngle < -15) return '${_sensorAngle.abs().toStringAsFixed(0)}° PORT';
-    if (_sensorAngle > 15) return '${_sensorAngle.abs().toStringAsFixed(0)}° STARBOARD';
+    if (_sensorAngle < -15)
+      return '${_sensorAngle.abs().toStringAsFixed(0)}° PORT';
+    if (_sensorAngle > 15)
+      return '${_sensorAngle.abs().toStringAsFixed(0)}° STARBOARD';
     return 'DEAD AHEAD';
   }
 
@@ -10070,7 +11359,8 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
                         builder: (context, child) {
                           return Transform.scale(
                             scale: _pulseAnimation.value,
-                            child: Icon(Icons.sensors, size: 40, color: Colors.white),
+                            child: Icon(Icons.sensors,
+                                size: 40, color: Colors.white),
                           );
                         },
                       ),
@@ -10078,10 +11368,14 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('ULTRASONIC SENSOR SYSTEM', 
-                              style: TextStyle(color: Colors.white70, fontSize: 12)),
-                          Text('Obstacle Detection', 
-                              style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                          Text('ULTRASONIC SENSOR SYSTEM',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 12)),
+                          Text('Obstacle Detection',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ],
@@ -10100,7 +11394,7 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
               ),
             ),
           ),
-          
+
           Expanded(
             child: SingleChildScrollView(
               padding: EdgeInsets.all(20),
@@ -10116,7 +11410,8 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: _getStatusColor().withOpacity(0.3), width: 2),
+                      border: Border.all(
+                          color: _getStatusColor().withOpacity(0.3), width: 2),
                     ),
                     child: Column(
                       children: [
@@ -10130,7 +11425,7 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
                           ),
                         ),
                         SizedBox(height: 20),
-                        
+
                         // Distance Meter
                         Stack(
                           alignment: Alignment.center,
@@ -10150,14 +11445,17 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                            
+
                             // Distance indicator
                             AnimatedPositioned(
                               duration: Duration(milliseconds: 300),
-                              left: (_obstacleDistance - 50) / 450 * (MediaQuery.of(context).size.width - 60),
+                              left: (_obstacleDistance - 50) /
+                                  450 *
+                                  (MediaQuery.of(context).size.width - 60),
                               child: Column(
                                 children: [
-                                  Icon(Icons.arrow_upward, color: _getStatusColor(), size: 30),
+                                  Icon(Icons.arrow_upward,
+                                      color: _getStatusColor(), size: 30),
                                   Text(
                                     '${_obstacleDistance.toStringAsFixed(0)}cm',
                                     style: TextStyle(
@@ -10169,39 +11467,49 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
                                 ],
                               ),
                             ),
-                            
+
                             // Scale markers
                             Positioned(
                               bottom: 10,
                               left: 0,
                               right: 0,
                               child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text('50cm', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                  Text('200cm', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                  Text('500cm', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                  Text('50cm',
+                                      style: TextStyle(
+                                          color: Colors.white70, fontSize: 12)),
+                                  Text('200cm',
+                                      style: TextStyle(
+                                          color: Colors.white70, fontSize: 12)),
+                                  Text('500cm',
+                                      style: TextStyle(
+                                          color: Colors.white70, fontSize: 12)),
                                 ],
                               ),
                             ),
                           ],
                         ),
-                        
+
                         SizedBox(height: 20),
-                        
+
                         // Status Indicator
                         Container(
                           padding: EdgeInsets.all(15),
                           decoration: BoxDecoration(
                             color: _getStatusColor().withOpacity(0.1),
                             borderRadius: BorderRadius.circular(15),
-                            border: Border.all(color: _getStatusColor().withOpacity(0.3)),
+                            border: Border.all(
+                                color: _getStatusColor().withOpacity(0.3)),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(
-                                _obstacleDetected ? Icons.warning : Icons.check_circle,
+                                _obstacleDetected
+                                    ? Icons.warning
+                                    : Icons.check_circle,
                                 color: _getStatusColor(),
                                 size: 30,
                               ),
@@ -10218,7 +11526,9 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
                                     ),
                                   ),
                                   Text(
-                                    _obstacleDetected ? 'OBSTACLE DETECTED' : 'PATH CLEAR',
+                                    _obstacleDetected
+                                        ? 'OBSTACLE DETECTED'
+                                        : 'PATH CLEAR',
                                     style: TextStyle(color: Colors.white70),
                                   ),
                                 ],
@@ -10229,9 +11539,9 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
                       ],
                     ),
                   ),
-                  
+
                   SizedBox(height: 20),
-                  
+
                   // Sensor Data Grid
                   GridView.count(
                     shrinkWrap: true,
@@ -10240,19 +11550,25 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
                     crossAxisSpacing: 15,
                     mainAxisSpacing: 15,
                     children: [
-                      _buildDataCard('Distance', '${_obstacleDistance.toStringAsFixed(0)} cm', 
-                          Icons.social_distance, _getStatusColor()),
-                      _buildDataCard('Direction', _getObstacleDirection(), 
+                      _buildDataCard(
+                          'Distance',
+                          '${_obstacleDistance.toStringAsFixed(0)} cm',
+                          Icons.social_distance,
+                          _getStatusColor()),
+                      _buildDataCard('Direction', _getObstacleDirection(),
                           Icons.compass_calibration, Colors.blueAccent),
-                      _buildDataCard('Sensor Angle', '${_sensorAngle.toStringAsFixed(0)}°', 
-                          Icons.architecture, Colors.purpleAccent),
-                      _buildDataCard('Update Rate', '500 ms', 
-                          Icons.update, Colors.greenAccent),
+                      _buildDataCard(
+                          'Sensor Angle',
+                          '${_sensorAngle.toStringAsFixed(0)}°',
+                          Icons.architecture,
+                          Colors.purpleAccent),
+                      _buildDataCard('Update Rate', '500 ms', Icons.update,
+                          Colors.greenAccent),
                     ],
                   ),
-                  
+
                   SizedBox(height: 20),
-                  
+
                   // Navigation Status
                   Container(
                     padding: EdgeInsets.all(20),
@@ -10278,19 +11594,24 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
-                            _buildNavStatus('Speed', '2.5 m/s', Icons.speed, Colors.greenAccent),
-                            _buildNavStatus('Course', 'N 45° E', Icons.explore, Colors.blueAccent),
-                            _buildNavStatus('Auto-Pilot', 'ACTIVE', Icons.autorenew, Colors.greenAccent),
+                            _buildNavStatus('Speed', '2.5 m/s', Icons.speed,
+                                Colors.greenAccent),
+                            _buildNavStatus('Course', 'N 45° E', Icons.explore,
+                                Colors.blueAccent),
+                            _buildNavStatus('Auto-Pilot', 'ACTIVE',
+                                Icons.autorenew, Colors.greenAccent),
                           ],
                         ),
                         SizedBox(height: 15),
                         Text(
-                          _obstacleDetected 
+                          _obstacleDetected
                               ? '⚠️ Taking evasive action - Adjusting course to avoid obstacle'
                               : '✅ Maintaining optimal course - No obstacles detected',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: _obstacleDetected ? Colors.orangeAccent : Colors.greenAccent,
+                            color: _obstacleDetected
+                                ? Colors.orangeAccent
+                                : Colors.greenAccent,
                             fontSize: 14,
                           ),
                         ),
@@ -10301,7 +11622,7 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
               ),
             ),
           ),
-          
+
           // Next Button
           Container(
             padding: EdgeInsets.all(16),
@@ -10340,11 +11661,15 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
         Container(
           padding: EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: active ? Colors.greenAccent.withOpacity(0.2) : Colors.redAccent.withOpacity(0.2),
+            color: active
+                ? Colors.greenAccent.withOpacity(0.2)
+                : Colors.redAccent.withOpacity(0.2),
             shape: BoxShape.circle,
-            border: Border.all(color: active ? Colors.greenAccent : Colors.redAccent),
+            border: Border.all(
+                color: active ? Colors.greenAccent : Colors.redAccent),
           ),
-          child: Icon(icon, size: 16, color: active ? Colors.greenAccent : Colors.redAccent),
+          child: Icon(icon,
+              size: 16, color: active ? Colors.greenAccent : Colors.redAccent),
         ),
         SizedBox(height: 4),
         Text(label, style: TextStyle(color: Colors.white70, fontSize: 10)),
@@ -10352,7 +11677,8 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
     );
   }
 
-  Widget _buildDataCard(String title, String value, IconData icon, Color color) {
+  Widget _buildDataCard(
+      String title, String value, IconData icon, Color color) {
     return Container(
       padding: EdgeInsets.all(15),
       decoration: BoxDecoration(
@@ -10369,21 +11695,24 @@ class _ObstacleDetectionScreenState extends State<ObstacleDetectionScreen> with 
         children: [
           Icon(icon, color: color, size: 24),
           SizedBox(height: 8),
-          Text(value, 
-              style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)),
-          Text(title, 
-              style: TextStyle(color: Colors.white70, fontSize: 12)),
+          Text(value,
+              style: TextStyle(
+                  color: color, fontSize: 16, fontWeight: FontWeight.bold)),
+          Text(title, style: TextStyle(color: Colors.white70, fontSize: 12)),
         ],
       ),
     );
   }
 
-  Widget _buildNavStatus(String title, String value, IconData icon, Color color) {
+  Widget _buildNavStatus(
+      String title, String value, IconData icon, Color color) {
     return Column(
       children: [
         Icon(icon, color: color, size: 20),
         SizedBox(height: 5),
-        Text(value, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+        Text(value,
+            style: TextStyle(
+                color: color, fontSize: 12, fontWeight: FontWeight.bold)),
         Text(title, style: TextStyle(color: Colors.white70, fontSize: 10)),
       ],
     );
@@ -10396,17 +11725,20 @@ class FloodRiskAlertScreen extends StatefulWidget {
   final double waterLevel;
   final VoidCallback onNext;
 
-  const FloodRiskAlertScreen({Key? key, required this.waterLevel, required this.onNext}) : super(key: key);
+  const FloodRiskAlertScreen(
+      {Key? key, required this.waterLevel, required this.onNext})
+      : super(key: key);
 
   @override
   _FloodRiskAlertScreenState createState() => _FloodRiskAlertScreenState();
 }
 
-class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with SingleTickerProviderStateMixin {
+class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen>
+    with SingleTickerProviderStateMixin {
   late Timer _dataUpdateTimer;
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
-  
+
   // Real-time data simulation
   double _currentWaterLevel = 0.0;
   double _rainfallIntensity = 0.0;
@@ -10420,15 +11752,14 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
   void initState() {
     super.initState();
     _currentWaterLevel = widget.waterLevel;
-    
+
     _pulseController = AnimationController(
       duration: Duration(milliseconds: 2000),
       vsync: this,
     )..repeat(reverse: true);
-    
+
     _pulseAnimation = Tween<double>(begin: 0.9, end: 1.1).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut)
-    );
+        CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut));
 
     _initializeData();
     _startDataUpdates();
@@ -10460,9 +11791,24 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
     ];
 
     _evacuationZones = [
-      {'name': 'Zone A - High Ground', 'capacity': '500 people', 'distance': '2.3 km', 'status': 'Available'},
-      {'name': 'Zone B - Community Center', 'capacity': '300 people', 'distance': '1.8 km', 'status': 'Available'},
-      {'name': 'Zone C - School Campus', 'capacity': '700 people', 'distance': '3.1 km', 'status': 'Full'},
+      {
+        'name': 'Zone A - High Ground',
+        'capacity': '500 people',
+        'distance': '2.3 km',
+        'status': 'Available'
+      },
+      {
+        'name': 'Zone B - Community Center',
+        'capacity': '300 people',
+        'distance': '1.8 km',
+        'status': 'Available'
+      },
+      {
+        'name': 'Zone C - School Campus',
+        'capacity': '700 people',
+        'distance': '3.1 km',
+        'status': 'Full'
+      },
     ];
   }
 
@@ -10478,7 +11824,8 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
 
   void _updateRealTimeData() {
     final random = Random();
-    _currentWaterLevel = (widget.waterLevel + random.nextDouble() * 10 - 5).clamp(0, 100);
+    _currentWaterLevel =
+        (widget.waterLevel + random.nextDouble() * 10 - 5).clamp(0, 100);
     _rainfallIntensity = random.nextDouble() * 100;
     _soilMoisture = random.nextDouble() * 100;
     _riverFlowRate = random.nextDouble() * 500;
@@ -10501,10 +11848,14 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
 
   Color _getSeverityColor(String severity) {
     switch (severity) {
-      case 'High': return Colors.redAccent;
-      case 'Medium': return Colors.orangeAccent;
-      case 'Low': return Colors.greenAccent;
-      default: return Colors.grey;
+      case 'High':
+        return Colors.redAccent;
+      case 'Medium':
+        return Colors.orangeAccent;
+      case 'Low':
+        return Colors.greenAccent;
+      default:
+        return Colors.grey;
     }
   }
 
@@ -10541,7 +11892,8 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
                         builder: (context, child) {
                           return Transform.scale(
                             scale: _pulseAnimation.value,
-                            child: Icon(Icons.warning_amber, size: 40, color: Colors.white),
+                            child: Icon(Icons.warning_amber,
+                                size: 40, color: Colors.white),
                           );
                         },
                       ),
@@ -10549,10 +11901,14 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('GLOF RISK MONITORING', 
-                              style: TextStyle(color: Colors.white70, fontSize: 12)),
-                          Text('Flood Risk Alert System', 
-                              style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                          Text('GLOF RISK MONITORING',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 12)),
+                          Text('Flood Risk Alert System',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ],
@@ -10560,7 +11916,8 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
                   SizedBox(height: 10),
                   Row(
                     children: [
-                      _buildStatusIndicator('AI Monitoring', Icons.psychology, true),
+                      _buildStatusIndicator(
+                          'AI Monitoring', Icons.psychology, true),
                       SizedBox(width: 15),
                       _buildStatusIndicator('Sensors', Icons.sensors, true),
                       SizedBox(width: 15),
@@ -10571,7 +11928,7 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
               ),
             ),
           ),
-          
+
           Expanded(
             child: SingleChildScrollView(
               padding: EdgeInsets.all(16),
@@ -10587,7 +11944,8 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: _getRiskColor().withOpacity(0.3), width: 2),
+                      border: Border.all(
+                          color: _getRiskColor().withOpacity(0.3), width: 2),
                       boxShadow: [
                         BoxShadow(
                           color: _getRiskColor().withOpacity(0.2),
@@ -10608,7 +11966,7 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
                           ),
                         ),
                         SizedBox(height: 20),
-                        
+
                         // Animated Water Level Gauge
                         Stack(
                           alignment: Alignment.center,
@@ -10644,22 +12002,25 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
                             ),
                           ],
                         ),
-                        
+
                         SizedBox(height: 20),
-                        
+
                         // Risk Status
                         Container(
                           padding: EdgeInsets.all(15),
                           decoration: BoxDecoration(
                             color: _getRiskColor().withOpacity(0.1),
                             borderRadius: BorderRadius.circular(15),
-                            border: Border.all(color: _getRiskColor().withOpacity(0.3)),
+                            border: Border.all(
+                                color: _getRiskColor().withOpacity(0.3)),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(
-                                _isAlertActive ? Icons.warning : Icons.check_circle,
+                                _isAlertActive
+                                    ? Icons.warning
+                                    : Icons.check_circle,
                                 color: _getRiskColor(),
                                 size: 30,
                               ),
@@ -10676,7 +12037,9 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
                                     ),
                                   ),
                                   Text(
-                                    _isAlertActive ? 'ALERT ACTIVE' : 'SYSTEM NORMAL',
+                                    _isAlertActive
+                                        ? 'ALERT ACTIVE'
+                                        : 'SYSTEM NORMAL',
                                     style: TextStyle(color: Colors.white70),
                                   ),
                                 ],
@@ -10684,9 +12047,9 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
                             ],
                           ),
                         ),
-                        
+
                         SizedBox(height: 15),
-                        
+
                         // Risk Description
                         Text(
                           _getRiskDescription(),
@@ -10699,9 +12062,9 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
                       ],
                     ),
                   ),
-                  
+
                   SizedBox(height: 20),
-                  
+
                   // Environmental Parameters Grid
                   GridView.count(
                     shrinkWrap: true,
@@ -10710,19 +12073,31 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
                     crossAxisSpacing: 15,
                     mainAxisSpacing: 15,
                     children: [
-                      _buildParameterCard('Rainfall', '${_rainfallIntensity.toStringAsFixed(1)} mm/h', 
-                          Icons.cloud, Colors.blueAccent),
-                      _buildParameterCard('Soil Moisture', '${_soilMoisture.toStringAsFixed(1)}%', 
-                          Icons.grass, Colors.greenAccent),
-                      _buildParameterCard('River Flow', '${_riverFlowRate.toStringAsFixed(0)} m³/s', 
-                          Icons.waves, Colors.cyanAccent),
-                      _buildParameterCard('Risk Probability', '${(_currentWaterLevel * 0.8).toStringAsFixed(1)}%', 
-                          Icons.analytics, _getRiskColor()),
+                      _buildParameterCard(
+                          'Rainfall',
+                          '${_rainfallIntensity.toStringAsFixed(1)} mm/h',
+                          Icons.cloud,
+                          Colors.blueAccent),
+                      _buildParameterCard(
+                          'Soil Moisture',
+                          '${_soilMoisture.toStringAsFixed(1)}%',
+                          Icons.grass,
+                          Colors.greenAccent),
+                      _buildParameterCard(
+                          'River Flow',
+                          '${_riverFlowRate.toStringAsFixed(0)} m³/s',
+                          Icons.waves,
+                          Colors.cyanAccent),
+                      _buildParameterCard(
+                          'Risk Probability',
+                          '${(_currentWaterLevel * 0.8).toStringAsFixed(1)}%',
+                          Icons.analytics,
+                          _getRiskColor()),
                     ],
                   ),
-                  
+
                   SizedBox(height: 20),
-                  
+
                   // Recent Alerts Section
                   Container(
                     padding: EdgeInsets.all(20),
@@ -10749,20 +12124,23 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
                               ),
                             ),
                             Chip(
-                              label: Text('${_recentAlerts.length} Active', 
-                                  style: TextStyle(color: Colors.white, fontSize: 12)),
+                              label: Text('${_recentAlerts.length} Active',
+                                  style: TextStyle(
+                                      color: Colors.white, fontSize: 12)),
                               backgroundColor: Colors.redAccent,
                             ),
                           ],
                         ),
                         SizedBox(height: 15),
-                        ..._recentAlerts.map((alert) => _buildAlertCard(alert)).toList(),
+                        ..._recentAlerts
+                            .map((alert) => _buildAlertCard(alert))
+                            .toList(),
                       ],
                     ),
                   ),
-                  
+
                   SizedBox(height: 20),
-                  
+
                   // Evacuation Zones
                   Container(
                     padding: EdgeInsets.all(20),
@@ -10786,13 +12164,15 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
                           ),
                         ),
                         SizedBox(height: 15),
-                        ..._evacuationZones.map((zone) => _buildEvacuationZoneCard(zone)).toList(),
+                        ..._evacuationZones
+                            .map((zone) => _buildEvacuationZoneCard(zone))
+                            .toList(),
                       ],
                     ),
                   ),
-                  
+
                   SizedBox(height: 20),
-                  
+
                   // EMERGENCY ACTIONS Section - Updated to match screenshot
                   Container(
                     padding: EdgeInsets.all(16),
@@ -10809,26 +12189,23 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
                           ),
                         ),
                         SizedBox(height: 15),
-                        
-                        _buildEmergencyAction('Alert Adherents', Icons.notifications_active, Colors.blueAccent, () {
+                        _buildEmergencyAction('Alert Adherents',
+                            Icons.notifications_active, Colors.blueAccent, () {
                           _showEmergencyDialog(context);
                         }),
-                        
                         SizedBox(height: 12),
-                        
-                        _buildEmergencyAction('Commandry Alert', Icons.emergency_share, Colors.orangeAccent, () {
+                        _buildEmergencyAction('Commandry Alert',
+                            Icons.emergency_share, Colors.orangeAccent, () {
                           _sendCommunityAlert();
                         }),
-                        
                         SizedBox(height: 12),
-                        
-                        _buildEmergencyAction('Medical Emergency', Icons.health_and_safety, Colors.redAccent, () {
+                        _buildEmergencyAction('Medical Emergency',
+                            Icons.health_and_safety, Colors.redAccent, () {
                           _showEvacuationPlan(context);
                         }),
-                        
                         SizedBox(height: 12),
-                        
-                        _buildEmergencyAction('Resource Mobilization', Icons.inventory, Colors.greenAccent, () {
+                        _buildEmergencyAction('Resource Mobilization',
+                            Icons.inventory, Colors.greenAccent, () {
                           _requestResources();
                         }),
                       ],
@@ -10838,7 +12215,7 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
               ),
             ),
           ),
-          
+
           // Next Button Container
           Container(
             padding: EdgeInsets.all(16),
@@ -10868,14 +12245,16 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
           ),
         ],
       ),
-      floatingActionButton: _isAlertActive ? FloatingActionButton(
-        onPressed: () {
-          _broadcastEmergencyAlert();
-        },
-        backgroundColor: Colors.redAccent,
-        child: Icon(Icons.emergency_share),
-        tooltip: 'Broadcast Emergency Alert',
-      ) : null,
+      floatingActionButton: _isAlertActive
+          ? FloatingActionButton(
+              onPressed: () {
+                _broadcastEmergencyAlert();
+              },
+              backgroundColor: Colors.redAccent,
+              child: Icon(Icons.emergency_share),
+              tooltip: 'Broadcast Emergency Alert',
+            )
+          : null,
     );
   }
 
@@ -10885,11 +12264,15 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
         Container(
           padding: EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: active ? Colors.greenAccent.withOpacity(0.2) : Colors.redAccent.withOpacity(0.2),
+            color: active
+                ? Colors.greenAccent.withOpacity(0.2)
+                : Colors.redAccent.withOpacity(0.2),
             shape: BoxShape.circle,
-            border: Border.all(color: active ? Colors.greenAccent : Colors.redAccent),
+            border: Border.all(
+                color: active ? Colors.greenAccent : Colors.redAccent),
           ),
-          child: Icon(icon, size: 16, color: active ? Colors.greenAccent : Colors.redAccent),
+          child: Icon(icon,
+              size: 16, color: active ? Colors.greenAccent : Colors.redAccent),
         ),
         SizedBox(height: 4),
         Text(label, style: TextStyle(color: Colors.white70, fontSize: 10)),
@@ -10897,7 +12280,8 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
     );
   }
 
-  Widget _buildParameterCard(String title, String value, IconData icon, Color color) {
+  Widget _buildParameterCard(
+      String title, String value, IconData icon, Color color) {
     return Container(
       padding: EdgeInsets.all(15),
       decoration: BoxDecoration(
@@ -10914,10 +12298,10 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
         children: [
           Icon(icon, color: color, size: 24),
           SizedBox(height: 8),
-          Text(value, 
-              style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)),
-          Text(title, 
-              style: TextStyle(color: Colors.white70, fontSize: 12)),
+          Text(value,
+              style: TextStyle(
+                  color: color, fontSize: 16, fontWeight: FontWeight.bold)),
+          Text(title, style: TextStyle(color: Colors.white70, fontSize: 12)),
         ],
       ),
     );
@@ -10930,28 +12314,31 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
       decoration: BoxDecoration(
         color: _getSeverityColor(alert['severity']).withOpacity(0.1),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _getSeverityColor(alert['severity']).withOpacity(0.3)),
+        border: Border.all(
+            color: _getSeverityColor(alert['severity']).withOpacity(0.3)),
       ),
       child: Row(
         children: [
-          Icon(Icons.warning_amber, color: _getSeverityColor(alert['severity']), size: 20),
+          Icon(Icons.warning_amber,
+              color: _getSeverityColor(alert['severity']), size: 20),
           SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(alert['type'], 
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                Text(alert['message'], 
+                Text(alert['type'],
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold)),
+                Text(alert['message'],
                     style: TextStyle(color: Colors.white70, fontSize: 12)),
                 SizedBox(height: 4),
-                Text(alert['time'], 
+                Text(alert['time'],
                     style: TextStyle(color: Colors.white54, fontSize: 10)),
               ],
             ),
           ),
           Chip(
-            label: Text(alert['severity'], 
+            label: Text(alert['severity'],
                 style: TextStyle(color: Colors.white, fontSize: 10)),
             backgroundColor: _getSeverityColor(alert['severity']),
           ),
@@ -10977,24 +12364,28 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(zone['name'], 
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                Text('Capacity: ${zone['capacity']} • Distance: ${zone['distance']}', 
+                Text(zone['name'],
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold)),
+                Text(
+                    'Capacity: ${zone['capacity']} • Distance: ${zone['distance']}',
                     style: TextStyle(color: Colors.white70, fontSize: 12)),
               ],
             ),
           ),
           Chip(
-            label: Text(zone['status'], 
+            label: Text(zone['status'],
                 style: TextStyle(color: Colors.white, fontSize: 10)),
-            backgroundColor: zone['status'] == 'Available' ? Colors.green : Colors.orange,
+            backgroundColor:
+                zone['status'] == 'Available' ? Colors.green : Colors.orange,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildEmergencyAction(String title, IconData icon, Color color, VoidCallback onTap) {
+  Widget _buildEmergencyAction(
+      String title, IconData icon, Color color, VoidCallback onTap) {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(16),
@@ -11085,8 +12476,9 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: Color(0xFF1E1E2C),
-          title: Text('Emergency Alert Authorities', 
-              style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+          title: Text('Emergency Alert Authorities',
+              style: TextStyle(
+                  color: Colors.redAccent, fontWeight: FontWeight.bold)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -11104,8 +12496,10 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
                   children: [
                     Icon(Icons.emergency, color: Colors.redAccent),
                     SizedBox(width: 10),
-                    Text('Priority: HIGH', 
-                        style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                    Text('Priority: HIGH',
+                        style: TextStyle(
+                            color: Colors.redAccent,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
@@ -11142,7 +12536,8 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
       context: context,
       builder: (BuildContext context) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           child: Container(
             padding: EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -11156,16 +12551,25 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Evacuation Plan', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                Text('Evacuation Plan',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold)),
                 SizedBox(height: 15),
-                ..._evacuationZones.map((zone) => ListTile(
-                  leading: Icon(Icons.place, color: Colors.blueAccent),
-                  title: Text(zone['name'], style: TextStyle(color: Colors.white)),
-                  subtitle: Text('${zone['distance']} • ${zone['status']}', style: TextStyle(color: Colors.white70)),
-                  trailing: zone['status'] == 'Available' 
-                      ? Icon(Icons.check_circle, color: Colors.green) 
-                      : Icon(Icons.warning, color: Colors.orange),
-                )).toList(),
+                ..._evacuationZones
+                    .map((zone) => ListTile(
+                          leading: Icon(Icons.place, color: Colors.blueAccent),
+                          title: Text(zone['name'],
+                              style: TextStyle(color: Colors.white)),
+                          subtitle: Text(
+                              '${zone['distance']} • ${zone['status']}',
+                              style: TextStyle(color: Colors.white70)),
+                          trailing: zone['status'] == 'Available'
+                              ? Icon(Icons.check_circle, color: Colors.green)
+                              : Icon(Icons.warning, color: Colors.orange),
+                        ))
+                    .toList(),
                 SizedBox(height: 20),
                 ElevatedButton(
                   onPressed: () => Navigator.pop(context),
@@ -11200,7 +12604,8 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
   void _broadcastEmergencyAlert() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('🚨 EMERGENCY ALERT: Flood risk critical - Evacuation advised'),
+        content: Text(
+            '🚨 EMERGENCY ALERT: Flood risk critical - Evacuation advised'),
         backgroundColor: Colors.red,
         duration: Duration(seconds: 5),
       ),
@@ -11216,13 +12621,17 @@ class _FloodRiskAlertScreenState extends State<FloodRiskAlertScreen> with Single
 }
 // Implement remaining screens with similar professional structure...
 
-
 class SmartChargingScreen extends StatelessWidget {
   final double batteryLevel;
   final double solarVoltage;
   final VoidCallback onNext;
 
-  const SmartChargingScreen({Key? key, required this.batteryLevel, required this.solarVoltage, required this.onNext}) : super(key: key);
+  const SmartChargingScreen(
+      {Key? key,
+      required this.batteryLevel,
+      required this.solarVoltage,
+      required this.onNext})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -11245,8 +12654,11 @@ class SmartChargingScreen extends StatelessWidget {
                   children: [
                     Icon(Icons.bolt, size: 40, color: Colors.white),
                     SizedBox(width: 10),
-                    Text('Smart Charging System', 
-                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    Text('Smart Charging System',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
                 SizedBox(height: 10),
@@ -11255,7 +12667,7 @@ class SmartChargingScreen extends StatelessWidget {
               ],
             ),
           ),
-          
+
           // Charging Cards Section - Each in separate row
           Expanded(
             child: Padding(
@@ -11265,64 +12677,66 @@ class SmartChargingScreen extends StatelessWidget {
                   children: [
                     // Battery Level - Single row
                     _buildChargeCard(
-                      'Battery Level', 
-                      '${batteryLevel.toStringAsFixed(1)}%', 
-                      Icons.battery_std, 
-                      _getBatteryColor(batteryLevel),
-                      'Current charge level'
-                    ),
+                        'Battery Level',
+                        '${batteryLevel.toStringAsFixed(1)}%',
+                        Icons.battery_std,
+                        _getBatteryColor(batteryLevel),
+                        'Current charge level'),
                     SizedBox(height: 15),
-                    
+
                     // Solar Voltage - Single row
                     _buildChargeCard(
-                      'Solar Voltage', 
-                      '${solarVoltage.toStringAsFixed(1)}V', 
-                      Icons.solar_power, 
-                      Colors.yellowAccent,
-                      'Current solar input'
-                    ),
+                        'Solar Voltage',
+                        '${solarVoltage.toStringAsFixed(1)}V',
+                        Icons.solar_power,
+                        Colors.yellowAccent,
+                        'Current solar input'),
                     SizedBox(height: 15),
-                    
+
                     // Charging Status - Single row
                     _buildChargeCard(
-                      'Charging Status', 
-                      batteryLevel < 95 ? 'ACTIVE' : 'FULL', 
-                      Icons.power, 
-                      batteryLevel < 95 ? Colors.greenAccent : Colors.blueAccent,
-                      batteryLevel < 95 ? 'Charging in progress' : 'Battery fully charged'
-                    ),
+                        'Charging Status',
+                        batteryLevel < 95 ? 'ACTIVE' : 'FULL',
+                        Icons.power,
+                        batteryLevel < 95
+                            ? Colors.greenAccent
+                            : Colors.blueAccent,
+                        batteryLevel < 95
+                            ? 'Charging in progress'
+                            : 'Battery fully charged'),
                     SizedBox(height: 15),
-                    
+
                     // Energy Today - Single row
                     _buildChargeCard(
-                      'Energy Today', 
-                      '${(batteryLevel * 0.5).toStringAsFixed(1)} kWh', 
-                      Icons.energy_savings_leaf, 
-                      Colors.tealAccent,
-                      'Total energy generated'
-                    ),
+                        'Energy Today',
+                        '${(batteryLevel * 0.5).toStringAsFixed(1)} kWh',
+                        Icons.energy_savings_leaf,
+                        Colors.tealAccent,
+                        'Total energy generated'),
                     SizedBox(height: 15),
-                    
+
                     // Charging Rate - Single row
                     _buildChargeCard(
-                      'Charging Rate', 
-                      '${(solarVoltage * 2.5).toStringAsFixed(1)} W', 
-                      Icons.speed, 
-                      Colors.orangeAccent,
-                      'Current charging power'
-                    ),
+                        'Charging Rate',
+                        '${(solarVoltage * 2.5).toStringAsFixed(1)} W',
+                        Icons.speed,
+                        Colors.orangeAccent,
+                        'Current charging power'),
                     SizedBox(height: 15),
-                    
+
                     // Estimated Time - Single row
                     _buildChargeCard(
-                      'Estimated Time', 
-                      batteryLevel < 95 ? '${((100 - batteryLevel) / 5).toStringAsFixed(0)}h' : 'FULL', 
-                      Icons.timer, 
-                      Colors.purpleAccent,
-                      batteryLevel < 95 ? 'Time to full charge' : 'Charging complete'
-                    ),
+                        'Estimated Time',
+                        batteryLevel < 95
+                            ? '${((100 - batteryLevel) / 5).toStringAsFixed(0)}h'
+                            : 'FULL',
+                        Icons.timer,
+                        Colors.purpleAccent,
+                        batteryLevel < 95
+                            ? 'Time to full charge'
+                            : 'Charging complete'),
                     SizedBox(height: 15),
-                    
+
                     // Battery Health Card - Single row
                     Card(
                       color: Color(0xFF1E1E2C),
@@ -11339,17 +12753,25 @@ class SmartChargingScreen extends StatelessWidget {
                                     color: Colors.greenAccent.withOpacity(0.1),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(Icons.health_and_safety, color: Colors.greenAccent),
+                                  child: Icon(Icons.health_and_safety,
+                                      color: Colors.greenAccent),
                                 ),
                                 SizedBox(width: 15),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Text('Battery Health', 
-                                          style: TextStyle(color: Colors.white70, fontSize: 16)),
-                                      Text('${_getBatteryHealth(batteryLevel)}', 
-                                          style: TextStyle(color: _getBatteryHealthColor(batteryLevel), fontSize: 18, fontWeight: FontWeight.bold)),
+                                      Text('Battery Health',
+                                          style: TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 16)),
+                                      Text('${_getBatteryHealth(batteryLevel)}',
+                                          style: TextStyle(
+                                              color: _getBatteryHealthColor(
+                                                  batteryLevel),
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold)),
                                     ],
                                   ),
                                 ),
@@ -11359,15 +12781,20 @@ class SmartChargingScreen extends StatelessWidget {
                             LinearProgressIndicator(
                               value: batteryLevel / 100,
                               backgroundColor: Colors.grey[800],
-                              valueColor: AlwaysStoppedAnimation<Color>(_getBatteryColor(batteryLevel)),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  _getBatteryColor(batteryLevel)),
                               minHeight: 6,
                             ),
                             SizedBox(height: 5),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('0%', style: TextStyle(color: Colors.white54, fontSize: 12)),
-                                Text('100%', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                                Text('0%',
+                                    style: TextStyle(
+                                        color: Colors.white54, fontSize: 12)),
+                                Text('100%',
+                                    style: TextStyle(
+                                        color: Colors.white54, fontSize: 12)),
                               ],
                             ),
                           ],
@@ -11375,7 +12802,7 @@ class SmartChargingScreen extends StatelessWidget {
                       ),
                     ),
                     SizedBox(height: 15),
-                    
+
                     // Solar Efficiency Card - Single row
                     Card(
                       color: Color(0xFF1E1E2C),
@@ -11392,17 +12819,25 @@ class SmartChargingScreen extends StatelessWidget {
                                     color: Colors.yellowAccent.withOpacity(0.1),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(Icons.safety_check, color: Colors.yellowAccent),
+                                  child: Icon(Icons.safety_check,
+                                      color: Colors.yellowAccent),
                                 ),
                                 SizedBox(width: 15),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Text('Solar Efficiency', 
-                                          style: TextStyle(color: Colors.white70, fontSize: 16)),
-                                      Text('${(solarVoltage / 24 * 100).toStringAsFixed(1)}%', 
-                                          style: TextStyle(color: Colors.yellowAccent, fontSize: 18, fontWeight: FontWeight.bold)),
+                                      Text('Solar Efficiency',
+                                          style: TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 16)),
+                                      Text(
+                                          '${(solarVoltage / 24 * 100).toStringAsFixed(1)}%',
+                                          style: TextStyle(
+                                              color: Colors.yellowAccent,
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold)),
                                     ],
                                   ),
                                 ),
@@ -11410,7 +12845,8 @@ class SmartChargingScreen extends StatelessWidget {
                             ),
                             SizedBox(height: 10),
                             Text('Optimal performance maintained',
-                                style: TextStyle(color: Colors.white54, fontSize: 12)),
+                                style: TextStyle(
+                                    color: Colors.white54, fontSize: 12)),
                           ],
                         ),
                       ),
@@ -11420,7 +12856,7 @@ class SmartChargingScreen extends StatelessWidget {
               ),
             ),
           ),
-          
+
           // Action Button Section
           Container(
             padding: EdgeInsets.all(16),
@@ -11433,9 +12869,12 @@ class SmartChargingScreen extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildActionButton(Icons.refresh, 'Refresh', Colors.blueAccent),
-                    _buildActionButton(Icons.offline_bolt, 'Power', Colors.greenAccent),
-                    _buildActionButton(Icons.settings, 'Settings', Colors.orangeAccent),
+                    _buildActionButton(
+                        Icons.refresh, 'Refresh', Colors.blueAccent),
+                    _buildActionButton(
+                        Icons.offline_bolt, 'Power', Colors.greenAccent),
+                    _buildActionButton(
+                        Icons.settings, 'Settings', Colors.orangeAccent),
                   ],
                 ),
                 SizedBox(height: 15),
@@ -11479,7 +12918,8 @@ class SmartChargingScreen extends StatelessWidget {
     return 'Critical';
   }
 
-  Widget _buildChargeCard(String title, String value, IconData icon, Color color, String subtitle) {
+  Widget _buildChargeCard(
+      String title, String value, IconData icon, Color color, String subtitle) {
     return Card(
       color: Color(0xFF1E1E2C),
       child: Padding(
@@ -11502,11 +12942,15 @@ class SmartChargingScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title, 
-                          style: TextStyle(color: Colors.white70, fontSize: 14)),
+                      Text(title,
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 14)),
                       SizedBox(height: 4),
-                      Text(value, 
-                          style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.bold)),
+                      Text(value,
+                          style: TextStyle(
+                              color: color,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
@@ -11538,6 +12982,7 @@ class SmartChargingScreen extends StatelessWidget {
     );
   }
 }
+
 class AIVisionScreen extends StatefulWidget {
   final VoidCallback onNext;
 
@@ -11570,8 +13015,11 @@ class _AIVisionScreenState extends State<AIVisionScreen> {
                   children: [
                     Icon(Icons.camera_alt, size: 40, color: Colors.white),
                     SizedBox(width: 10),
-                    Text('AI-Powered Vision', 
-                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    Text('AI-Powered Vision',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
               ],
@@ -11588,7 +13036,8 @@ class _AIVisionScreenState extends State<AIVisionScreen> {
                       borderRadius: BorderRadius.circular(12),
                       color: Colors.black,
                       image: DecorationImage(
-                        image: NetworkImage('https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400'),
+                        image: NetworkImage(
+                            'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400'),
                         fit: BoxFit.cover,
                       ),
                     ),
@@ -11599,19 +13048,25 @@ class _AIVisionScreenState extends State<AIVisionScreen> {
                           bottom: 10,
                           left: 10,
                           child: Container(
-                            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
                               color: Colors.black54,
                               borderRadius: BorderRadius.circular(16),
                             ),
                             child: Row(
                               children: [
-                                Icon(_isStreaming ? Icons.videocam : Icons.videocam_off, 
-                                    color: Colors.white, size: 16),
+                                Icon(
+                                    _isStreaming
+                                        ? Icons.videocam
+                                        : Icons.videocam_off,
+                                    color: Colors.white,
+                                    size: 16),
                                 SizedBox(width: 5),
                                 Text(
                                   _isStreaming ? 'LIVE' : 'OFFLINE',
-                                  style: TextStyle(color: Colors.white, fontSize: 12),
+                                  style: TextStyle(
+                                      color: Colors.white, fontSize: 12),
                                 ),
                               ],
                             ),
@@ -11625,18 +13080,24 @@ class _AIVisionScreenState extends State<AIVisionScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       ElevatedButton.icon(
-                        onPressed: () => setState(() => _isStreaming = !_isStreaming),
-                        icon: Icon(_isStreaming ? Icons.stop : Icons.play_arrow),
-                        label: Text(_isStreaming ? 'Stop Stream' : 'Start Stream'),
+                        onPressed: () =>
+                            setState(() => _isStreaming = !_isStreaming),
+                        icon:
+                            Icon(_isStreaming ? Icons.stop : Icons.play_arrow),
+                        label:
+                            Text(_isStreaming ? 'Stop Stream' : 'Start Stream'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _isStreaming ? Colors.redAccent : Colors.greenAccent,
+                          backgroundColor: _isStreaming
+                              ? Colors.redAccent
+                              : Colors.greenAccent,
                         ),
                       ),
                       ElevatedButton.icon(
                         onPressed: () {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('Image captured and saved to database'),
+                              content:
+                                  Text('Image captured and saved to database'),
                               backgroundColor: Colors.greenAccent,
                             ),
                           );
@@ -11652,7 +13113,8 @@ class _AIVisionScreenState extends State<AIVisionScreen> {
                       children: [
                         _buildDetectionItem('Plastic Waste', '92%', 'Top Left'),
                         _buildDetectionItem('Hyacinth', '78%', 'Center'),
-                        _buildDetectionItem('Organic Matter', '65%', 'Bottom Right'),
+                        _buildDetectionItem(
+                            'Organic Matter', '65%', 'Bottom Right'),
                       ],
                     ),
                   ),
@@ -11705,7 +13167,7 @@ class _AIVisionScreenState extends State<AIVisionScreen> {
         borderRadius: BorderRadius.circular(6),
         color: Colors.black54,
       ),
-      child: Text('$label ${(confidence * 100).toInt()}%', 
+      child: Text('$label ${(confidence * 100).toInt()}%',
           style: TextStyle(color: Colors.white, fontSize: 10)),
     );
   }
@@ -11724,7 +13186,8 @@ class _AIVisionScreenState extends State<AIVisionScreen> {
           ),
         ),
         title: Text(label, style: TextStyle(color: Colors.white)),
-        subtitle: Text('Position: $position', style: TextStyle(color: Colors.white70)),
+        subtitle: Text('Position: $position',
+            style: TextStyle(color: Colors.white70)),
         trailing: Chip(
           label: Text(confidence, style: TextStyle(fontSize: 12)),
           backgroundColor: Colors.blueAccent.withOpacity(0.2),
@@ -11761,8 +13224,11 @@ class GasSensingScreen extends StatelessWidget {
                   children: [
                     Icon(Icons.air, size: 40, color: Colors.white),
                     SizedBox(width: 10),
-                    Text('Gas Sensing Technology', 
-                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    Text('Gas Sensing Technology',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
                 SizedBox(height: 10),
@@ -11771,7 +13237,7 @@ class GasSensingScreen extends StatelessWidget {
               ],
             ),
           ),
-          
+
           // Gas Cards Section - Each in separate row
           Expanded(
             child: Padding(
@@ -11781,70 +13247,54 @@ class GasSensingScreen extends StatelessWidget {
                   children: [
                     // CO₂ Levels - Single row
                     _buildGasCard(
-                      'CO₂ Levels', 
-                      '412 ppm', 
-                      Icons.co2, 
-                      Colors.greenAccent,
-                      'Safe',
-                      'Carbon dioxide concentration'
-                    ),
+                        'CO₂ Levels',
+                        '412 ppm',
+                        Icons.co2,
+                        Colors.greenAccent,
+                        'Safe',
+                        'Carbon dioxide concentration'),
                     SizedBox(height: 15),
-                    
+
                     // Methane - Single row
                     _buildGasCard(
-                      'Methane', 
-                      '0.2%', 
-                      Icons.local_fire_department, 
-                      Colors.orangeAccent,
-                      'Low',
-                      'Methane gas levels'
-                    ),
+                        'Methane',
+                        '0.2%',
+                        Icons.local_fire_department,
+                        Colors.orangeAccent,
+                        'Low',
+                        'Methane gas levels'),
                     SizedBox(height: 15),
-                    
+
                     // Oxygen - Single row
-                    _buildGasCard(
-                      'Oxygen', 
-                      '20.9%', 
-                      Icons.air, 
-                      Colors.blueAccent,
-                      'Normal',
-                      'Oxygen concentration'
-                    ),
+                    _buildGasCard('Oxygen', '20.9%', Icons.air,
+                        Colors.blueAccent, 'Normal', 'Oxygen concentration'),
                     SizedBox(height: 15),
-                    
+
                     // Air Quality - Single row
                     _buildGasCard(
-                      'Air Quality', 
-                      'Good', 
-                      Icons.health_and_safety, 
-                      Colors.tealAccent,
-                      'Excellent',
-                      'Overall air quality index'
-                    ),
+                        'Air Quality',
+                        'Good',
+                        Icons.health_and_safety,
+                        Colors.tealAccent,
+                        'Excellent',
+                        'Overall air quality index'),
                     SizedBox(height: 15),
-                    
+
                     // Temperature - Single row
-                    _buildGasCard(
-                      'Temperature', 
-                      '28.5°C', 
-                      Icons.thermostat, 
-                      Colors.redAccent,
-                      'Normal',
-                      'Ambient temperature'
-                    ),
+                    _buildGasCard('Temperature', '28.5°C', Icons.thermostat,
+                        Colors.redAccent, 'Normal', 'Ambient temperature'),
                     SizedBox(height: 15),
-                    
+
                     // Humidity - Single row
                     _buildGasCard(
-                      'Humidity', 
-                      '65%', 
-                      Icons.water_drop, 
-                      Colors.purpleAccent,
-                      'Comfortable',
-                      'Relative humidity level'
-                    ),
+                        'Humidity',
+                        '65%',
+                        Icons.water_drop,
+                        Colors.purpleAccent,
+                        'Comfortable',
+                        'Relative humidity level'),
                     SizedBox(height: 15),
-                    
+
                     // Air Quality Index Card - Single row
                     Card(
                       color: Color(0xFF1E1E2C),
@@ -11861,17 +13311,24 @@ class GasSensingScreen extends StatelessWidget {
                                     color: Colors.tealAccent.withOpacity(0.1),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(Icons.analytics, color: Colors.tealAccent),
+                                  child: Icon(Icons.analytics,
+                                      color: Colors.tealAccent),
                                 ),
                                 SizedBox(width: 15),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Text('Air Quality Index', 
-                                          style: TextStyle(color: Colors.white70, fontSize: 16)),
-                                      Text('42 - Good', 
-                                          style: TextStyle(color: Colors.tealAccent, fontSize: 18, fontWeight: FontWeight.bold)),
+                                      Text('Air Quality Index',
+                                          style: TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 16)),
+                                      Text('42 - Good',
+                                          style: TextStyle(
+                                              color: Colors.tealAccent,
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold)),
                                     ],
                                   ),
                                 ),
@@ -11881,16 +13338,23 @@ class GasSensingScreen extends StatelessWidget {
                             LinearProgressIndicator(
                               value: 0.42,
                               backgroundColor: Colors.grey[800],
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.tealAccent),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.tealAccent),
                               minHeight: 6,
                             ),
                             SizedBox(height: 5),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('0-50 Good', style: TextStyle(color: Colors.white54, fontSize: 10)),
-                                Text('51-100 Moderate', style: TextStyle(color: Colors.white54, fontSize: 10)),
-                                Text('101+ Poor', style: TextStyle(color: Colors.white54, fontSize: 10)),
+                                Text('0-50 Good',
+                                    style: TextStyle(
+                                        color: Colors.white54, fontSize: 10)),
+                                Text('51-100 Moderate',
+                                    style: TextStyle(
+                                        color: Colors.white54, fontSize: 10)),
+                                Text('101+ Poor',
+                                    style: TextStyle(
+                                        color: Colors.white54, fontSize: 10)),
                               ],
                             ),
                           ],
@@ -11902,7 +13366,7 @@ class GasSensingScreen extends StatelessWidget {
               ),
             ),
           ),
-          
+
           // Action Button Section
           Container(
             padding: EdgeInsets.all(16),
@@ -11915,9 +13379,12 @@ class GasSensingScreen extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildActionButton(Icons.refresh, 'Refresh', Colors.blueAccent),
-                    _buildActionButton(Icons.history, 'History', Colors.greenAccent),
-                    _buildActionButton(Icons.warning, 'Alerts', Colors.orangeAccent),
+                    _buildActionButton(
+                        Icons.refresh, 'Refresh', Colors.blueAccent),
+                    _buildActionButton(
+                        Icons.history, 'History', Colors.greenAccent),
+                    _buildActionButton(
+                        Icons.warning, 'Alerts', Colors.orangeAccent),
                   ],
                 ),
                 SizedBox(height: 15),
@@ -11941,7 +13408,8 @@ class GasSensingScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildGasCard(String gas, String value, IconData icon, Color color, String status, String subtitle) {
+  Widget _buildGasCard(String gas, String value, IconData icon, Color color,
+      String status, String subtitle) {
     return Card(
       color: Color(0xFF1E1E2C),
       child: Padding(
@@ -11964,11 +13432,15 @@ class GasSensingScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(gas, 
-                          style: TextStyle(color: Colors.white70, fontSize: 14)),
+                      Text(gas,
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 14)),
                       SizedBox(height: 4),
-                      Text(value, 
-                          style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.bold)),
+                      Text(value,
+                          style: TextStyle(
+                              color: color,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
@@ -11978,8 +13450,11 @@ class GasSensingScreen extends StatelessWidget {
                     color: color.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text(status, 
-                      style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+                  child: Text(status,
+                      style: TextStyle(
+                          color: color,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
@@ -12009,18 +13484,28 @@ class GasSensingScreen extends StatelessWidget {
     );
   }
 }
+
 // Continue with PH Testing, Turbidity, TDS, Eco-Disposal, etc.
 class PHTestingScreen extends StatelessWidget {
   final double phLevel;
   final VoidCallback onNext;
 
-  const PHTestingScreen({Key? key, required this.phLevel, required this.onNext}) : super(key: key);
+  const PHTestingScreen({Key? key, required this.phLevel, required this.onNext})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final status = phLevel < 6.5 ? 'Acidic' : phLevel > 8.5 ? 'Alkaline' : 'Optimal';
-    final color = phLevel < 6.5 ? Colors.redAccent : phLevel > 8.5 ? Colors.orangeAccent : Colors.greenAccent;
-    
+    final status = phLevel < 6.5
+        ? 'Acidic'
+        : phLevel > 8.5
+            ? 'Alkaline'
+            : 'Optimal';
+    final color = phLevel < 6.5
+        ? Colors.redAccent
+        : phLevel > 8.5
+            ? Colors.orangeAccent
+            : Colors.greenAccent;
+
     return Scaffold(
       body: Column(
         children: [
@@ -12040,8 +13525,11 @@ class PHTestingScreen extends StatelessWidget {
                   children: [
                     Icon(Icons.science, size: 40, color: Colors.white),
                     SizedBox(width: 10),
-                    Text('PH Level Testing', 
-                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    Text('PH Level Testing',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
                 SizedBox(height: 10),
@@ -12050,7 +13538,7 @@ class PHTestingScreen extends StatelessWidget {
               ],
             ),
           ),
-          
+
           // PH Content Section
           Expanded(
             child: Padding(
@@ -12067,23 +13555,31 @@ class PHTestingScreen extends StatelessWidget {
                           children: [
                             Text(
                               'CURRENT PH LEVEL',
-                              style: TextStyle(color: Colors.white70, fontSize: 16),
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 16),
                             ),
                             SizedBox(height: 10),
                             Text(
                               phLevel.toStringAsFixed(1),
-                              style: TextStyle(fontSize: 64, fontWeight: FontWeight.bold, color: color),
+                              style: TextStyle(
+                                  fontSize: 64,
+                                  fontWeight: FontWeight.bold,
+                                  color: color),
                             ),
                             SizedBox(height: 10),
                             Container(
-                              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
                               decoration: BoxDecoration(
                                 color: color.withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Text(
                                 'STATUS: $status',
-                                style: TextStyle(fontSize: 18, color: color, fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                    fontSize: 18,
+                                    color: color,
+                                    fontWeight: FontWeight.bold),
                               ),
                             ),
                           ],
@@ -12091,7 +13587,7 @@ class PHTestingScreen extends StatelessWidget {
                       ),
                     ),
                     SizedBox(height: 20),
-                    
+
                     // PH Scale - Single row
                     Card(
                       color: Color(0xFF1E1E2C),
@@ -12099,15 +13595,20 @@ class PHTestingScreen extends StatelessWidget {
                         padding: EdgeInsets.all(16),
                         child: Column(
                           children: [
-                            Text('PH Scale Reference', 
-                                style: TextStyle(color: Colors.white70, fontSize: 16)),
+                            Text('PH Scale Reference',
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 16)),
                             SizedBox(height: 15),
                             Container(
                               width: double.infinity,
                               height: 30,
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
-                                  colors: [Colors.red, Colors.green, Colors.orange],
+                                  colors: [
+                                    Colors.red,
+                                    Colors.green,
+                                    Colors.orange
+                                  ],
                                   stops: [0.0, 0.5, 1.0],
                                 ),
                                 borderRadius: BorderRadius.circular(15),
@@ -12117,9 +13618,15 @@ class PHTestingScreen extends StatelessWidget {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('0 Acidic', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                Text('7 Neutral', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                Text('14 Alkaline', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                Text('0 Acidic',
+                                    style: TextStyle(
+                                        color: Colors.white70, fontSize: 12)),
+                                Text('7 Neutral',
+                                    style: TextStyle(
+                                        color: Colors.white70, fontSize: 12)),
+                                Text('14 Alkaline',
+                                    style: TextStyle(
+                                        color: Colors.white70, fontSize: 12)),
                               ],
                             ),
                           ],
@@ -12127,19 +13634,22 @@ class PHTestingScreen extends StatelessWidget {
                       ),
                     ),
                     SizedBox(height: 15),
-                    
+
                     // Water Quality Metrics - Single rows
-                    _buildQualityCard('Water Purity', '98%', Icons.clean_hands, Colors.blueAccent),
+                    _buildQualityCard('Water Purity', '98%', Icons.clean_hands,
+                        Colors.blueAccent),
                     SizedBox(height: 15),
-                    _buildQualityCard('Contaminants', '2 ppm', Icons.dangerous, Colors.orangeAccent),
+                    _buildQualityCard('Contaminants', '2 ppm', Icons.dangerous,
+                        Colors.orangeAccent),
                     SizedBox(height: 15),
-                    _buildQualityCard('Recommendation', 'Safe', Icons.recommend, Colors.greenAccent),
+                    _buildQualityCard('Recommendation', 'Safe', Icons.recommend,
+                        Colors.greenAccent),
                   ],
                 ),
               ),
             ),
           ),
-          
+
           // Action Button Section
           Container(
             padding: EdgeInsets.all(16),
@@ -12152,9 +13662,11 @@ class PHTestingScreen extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildActionButton(Icons.refresh, 'Retest', Colors.blueAccent),
+                    _buildActionButton(
+                        Icons.refresh, 'Retest', Colors.blueAccent),
                     _buildActionButton(Icons.save, 'Save', Colors.greenAccent),
-                    _buildActionButton(Icons.share, 'Report', Colors.orangeAccent),
+                    _buildActionButton(
+                        Icons.share, 'Report', Colors.orangeAccent),
                   ],
                 ),
                 SizedBox(height: 15),
@@ -12178,7 +13690,8 @@ class PHTestingScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildQualityCard(String title, String value, IconData icon, Color color) {
+  Widget _buildQualityCard(
+      String title, String value, IconData icon, Color color) {
     return Card(
       color: Color(0xFF1E1E2C),
       child: Padding(
@@ -12198,8 +13711,13 @@ class PHTestingScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(color: Colors.white70, fontSize: 14)),
-                  Text(value, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text(title,
+                      style: TextStyle(color: Colors.white70, fontSize: 14)),
+                  Text(value,
+                      style: TextStyle(
+                          color: color,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
@@ -12232,13 +13750,23 @@ class TurbidityTestingScreen extends StatelessWidget {
   final double turbidity;
   final VoidCallback onNext;
 
-  const TurbidityTestingScreen({Key? key, required this.turbidity, required this.onNext}) : super(key: key);
+  const TurbidityTestingScreen(
+      {Key? key, required this.turbidity, required this.onNext})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final status = turbidity > 40 ? 'Poor' : turbidity > 20 ? 'Moderate' : 'Good';
-    final color = turbidity > 40 ? Colors.redAccent : turbidity > 20 ? Colors.orangeAccent : Colors.greenAccent;
-    
+    final status = turbidity > 40
+        ? 'Poor'
+        : turbidity > 20
+            ? 'Moderate'
+            : 'Good';
+    final color = turbidity > 40
+        ? Colors.redAccent
+        : turbidity > 20
+            ? Colors.orangeAccent
+            : Colors.greenAccent;
+
     return Scaffold(
       body: Column(
         children: [
@@ -12258,8 +13786,11 @@ class TurbidityTestingScreen extends StatelessWidget {
                   children: [
                     Icon(Icons.opacity, size: 40, color: Colors.white),
                     SizedBox(width: 10),
-                    Text('Turbidity Testing', 
-                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    Text('Turbidity Testing',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
                 SizedBox(height: 10),
@@ -12268,7 +13799,7 @@ class TurbidityTestingScreen extends StatelessWidget {
               ],
             ),
           ),
-          
+
           // Turbidity Content Section
           Expanded(
             child: Padding(
@@ -12285,23 +13816,31 @@ class TurbidityTestingScreen extends StatelessWidget {
                           children: [
                             Text(
                               'TURBIDITY LEVEL',
-                              style: TextStyle(color: Colors.white70, fontSize: 16),
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 16),
                             ),
                             SizedBox(height: 10),
                             Text(
                               '${turbidity.toStringAsFixed(1)} NTU',
-                              style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: color),
+                              style: TextStyle(
+                                  fontSize: 48,
+                                  fontWeight: FontWeight.bold,
+                                  color: color),
                             ),
                             SizedBox(height: 10),
                             Container(
-                              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
                               decoration: BoxDecoration(
                                 color: color.withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Text(
                                 'WATER CLARITY: $status',
-                                style: TextStyle(fontSize: 18, color: color, fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                    fontSize: 18,
+                                    color: color,
+                                    fontWeight: FontWeight.bold),
                               ),
                             ),
                           ],
@@ -12309,7 +13848,7 @@ class TurbidityTestingScreen extends StatelessWidget {
                       ),
                     ),
                     SizedBox(height: 20),
-                    
+
                     // Turbidity Scale - Single row
                     Card(
                       color: Color(0xFF1E1E2C),
@@ -12317,8 +13856,9 @@ class TurbidityTestingScreen extends StatelessWidget {
                         padding: EdgeInsets.all(16),
                         child: Column(
                           children: [
-                            Text('Turbidity Scale', 
-                                style: TextStyle(color: Colors.white70, fontSize: 16)),
+                            Text('Turbidity Scale',
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 16)),
                             SizedBox(height: 15),
                             LinearProgressIndicator(
                               value: turbidity / 100,
@@ -12332,20 +13872,38 @@ class TurbidityTestingScreen extends StatelessWidget {
                               children: [
                                 Column(
                                   children: [
-                                    Text('0 NTU', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                    Text('Crystal', style: TextStyle(color: Colors.greenAccent, fontSize: 10)),
+                                    Text('0 NTU',
+                                        style: TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12)),
+                                    Text('Crystal',
+                                        style: TextStyle(
+                                            color: Colors.greenAccent,
+                                            fontSize: 10)),
                                   ],
                                 ),
                                 Column(
                                   children: [
-                                    Text('40 NTU', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                    Text('Moderate', style: TextStyle(color: Colors.orangeAccent, fontSize: 10)),
+                                    Text('40 NTU',
+                                        style: TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12)),
+                                    Text('Moderate',
+                                        style: TextStyle(
+                                            color: Colors.orangeAccent,
+                                            fontSize: 10)),
                                   ],
                                 ),
                                 Column(
                                   children: [
-                                    Text('100 NTU', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                    Text('Cloudy', style: TextStyle(color: Colors.redAccent, fontSize: 10)),
+                                    Text('100 NTU',
+                                        style: TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12)),
+                                    Text('Cloudy',
+                                        style: TextStyle(
+                                            color: Colors.redAccent,
+                                            fontSize: 10)),
                                   ],
                                 ),
                               ],
@@ -12355,20 +13913,39 @@ class TurbidityTestingScreen extends StatelessWidget {
                       ),
                     ),
                     SizedBox(height: 15),
-                    
+
                     // Water Quality Metrics - Single rows
-                    _buildQualityCard('Particle Count', '${(turbidity * 10).toStringAsFixed(0)}/mL', Icons.grain, Colors.blueAccent),
+                    _buildQualityCard(
+                        'Particle Count',
+                        '${(turbidity * 10).toStringAsFixed(0)}/mL',
+                        Icons.grain,
+                        Colors.blueAccent),
                     SizedBox(height: 15),
-                    _buildQualityCard('Filter Efficiency', '${(100 - turbidity).toStringAsFixed(0)}%', Icons.filter_alt, Colors.tealAccent),
+                    _buildQualityCard(
+                        'Filter Efficiency',
+                        '${(100 - turbidity).toStringAsFixed(0)}%',
+                        Icons.filter_alt,
+                        Colors.tealAccent),
                     SizedBox(height: 15),
-                    _buildQualityCard('Visibility', turbidity < 10 ? 'Excellent' : turbidity < 30 ? 'Good' : 'Poor', 
-                        Icons.visibility, turbidity < 10 ? Colors.greenAccent : turbidity < 30 ? Colors.orangeAccent : Colors.redAccent),
+                    _buildQualityCard(
+                        'Visibility',
+                        turbidity < 10
+                            ? 'Excellent'
+                            : turbidity < 30
+                                ? 'Good'
+                                : 'Poor',
+                        Icons.visibility,
+                        turbidity < 10
+                            ? Colors.greenAccent
+                            : turbidity < 30
+                                ? Colors.orangeAccent
+                                : Colors.redAccent),
                   ],
                 ),
               ),
             ),
           ),
-          
+
           // Action Button Section
           Container(
             padding: EdgeInsets.all(16),
@@ -12381,9 +13958,12 @@ class TurbidityTestingScreen extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildActionButton(Icons.refresh, 'Retest', Colors.blueAccent),
-                    _buildActionButton(Icons.photo, 'Capture', Colors.greenAccent),
-                    _buildActionButton(Icons.analytics, 'Trends', Colors.orangeAccent),
+                    _buildActionButton(
+                        Icons.refresh, 'Retest', Colors.blueAccent),
+                    _buildActionButton(
+                        Icons.photo, 'Capture', Colors.greenAccent),
+                    _buildActionButton(
+                        Icons.analytics, 'Trends', Colors.orangeAccent),
                   ],
                 ),
                 SizedBox(height: 15),
@@ -12407,7 +13987,8 @@ class TurbidityTestingScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildQualityCard(String title, String value, IconData icon, Color color) {
+  Widget _buildQualityCard(
+      String title, String value, IconData icon, Color color) {
     return Card(
       color: Color(0xFF1E1E2C),
       child: Padding(
@@ -12427,277 +14008,13 @@ class TurbidityTestingScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(color: Colors.white70, fontSize: 14)),
-                  Text(value, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButton(IconData icon, String label, Color color) {
-    return Column(
-      children: [
-        Container(
-          padding: EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: color, size: 20),
-        ),
-        SizedBox(height: 5),
-        Text(label, style: TextStyle(color: Colors.white70, fontSize: 12)),
-      ],
-    );
-  }
-}class TDSTestingScreen extends StatelessWidget {
-  final double tds;
-  final VoidCallback onNext;
-
-  const TDSTestingScreen({Key? key, required this.tds, required this.onNext}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    final status = tds > 1000 ? 'Poor' : tds > 500 ? 'Moderate' : 'Good';
-    final color = tds > 1000 ? Colors.redAccent : tds > 500 ? Colors.orangeAccent : Colors.greenAccent;
-    
-    return Scaffold(
-      body: Column(
-        children: [
-          // Header Section
-          Container(
-            padding: EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF1A237E), Color(0xFF283593)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.water, size: 40, color: Colors.white),
-                    SizedBox(width: 10),
-                    Text('TDS Testing', 
-                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                SizedBox(height: 10),
-                Text('Total Dissolved Solids measurement',
-                    style: TextStyle(color: Colors.white70, fontSize: 14)),
-              ],
-            ),
-          ),
-          
-          // TDS Content Section
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.all(20),
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    // Main TDS Display - Single row
-                    Card(
-                      color: Color(0xFF1E1E2C),
-                      child: Padding(
-                        padding: EdgeInsets.all(25),
-                        child: Column(
-                          children: [
-                            Text(
-                              'TOTAL DISSOLVED SOLIDS',
-                              style: TextStyle(color: Colors.white70, fontSize: 16),
-                            ),
-                            SizedBox(height: 10),
-                            Text(
-                              '${tds.toStringAsFixed(0)} ppm',
-                              style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: color),
-                            ),
-                            SizedBox(height: 10),
-                            Container(
-                              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: color.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                'WATER QUALITY: $status',
-                                style: TextStyle(fontSize: 18, color: color, fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 20),
-                    
-                    // TDS Scale - Single row
-                    Card(
-                      color: Color(0xFF1E1E2C),
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Column(
-                          children: [
-                            Text('TDS Quality Scale', 
-                                style: TextStyle(color: Colors.white70, fontSize: 16)),
-                            SizedBox(height: 15),
-                            LinearProgressIndicator(
-                              value: tds / 2000,
-                              backgroundColor: Colors.grey[800],
-                              valueColor: AlwaysStoppedAnimation<Color>(color),
-                              minHeight: 20,
-                            ),
-                            SizedBox(height: 10),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Column(
-                                  children: [
-                                    Text('0-300', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                    Text('Excellent', style: TextStyle(color: Colors.greenAccent, fontSize: 10)),
-                                  ],
-                                ),
-                                Column(
-                                  children: [
-                                    Text('300-600', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                    Text('Good', style: TextStyle(color: Colors.blueAccent, fontSize: 10)),
-                                  ],
-                                ),
-                                Column(
-                                  children: [
-                                    Text('600-900', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                    Text('Fair', style: TextStyle(color: Colors.orangeAccent, fontSize: 10)),
-                                  ],
-                                ),
-                                Column(
-                                  children: [
-                                    Text('900+', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                    Text('Poor', style: TextStyle(color: Colors.redAccent, fontSize: 10)),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 15),
-                    
-                    // Water Quality Metrics - Single rows
-                    _buildQualityCard('Mineral Content', '${(tds * 0.7).toStringAsFixed(0)} ppm', Icons.eco, Colors.tealAccent),
-                    SizedBox(height: 15),
-                    _buildQualityCard('Purity Level', '${(100 - (tds/20)).toStringAsFixed(1)}%', Icons.clean_hands, Colors.blueAccent),
-                    SizedBox(height: 15),
-                    _buildQualityCard('Drinkability', tds < 600 ? 'Safe' : 'Not Recommended', 
-                        Icons.local_drink, tds < 600 ? Colors.greenAccent : Colors.redAccent),
-                    SizedBox(height: 15),
-                    
-                    // Recommendation Card
-                    Card(
-                      color: Color(0xFF1E1E2C),
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: color.withOpacity(0.1),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(Icons.recommend, color: color),
-                            ),
-                            SizedBox(width: 15),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Recommendation', 
-                                      style: TextStyle(color: Colors.white70, fontSize: 14)),
-                                  Text(
-                                    tds < 300 ? 'Excellent for drinking' : 
-                                    tds < 600 ? 'Good for drinking' : 
-                                    'Consider filtration',
-                                    style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          
-          // Action Button Section
-          Container(
-            padding: EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Color(0xFF1E1E2C),
-              border: Border(top: BorderSide(color: Colors.white12)),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildActionButton(Icons.refresh, 'Retest', Colors.blueAccent),
-                    _buildActionButton(Icons.water_drop, 'Sample', Colors.greenAccent),
-                    _buildActionButton(Icons.summarize, 'Report', Colors.orangeAccent),
-                  ],
-                ),
-                SizedBox(height: 15),
-                ElevatedButton.icon(
-                  onPressed: onNext,
-                  icon: Icon(Icons.arrow_forward),
-                  label: Text('Next: Eco-Disposal'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueAccent,
-                    minimumSize: Size(double.infinity, 50),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQualityCard(String title, String value, IconData icon, Color color) {
-    return Card(
-      color: Color(0xFF1E1E2C),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              padding: EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: color, size: 24),
-            ),
-            SizedBox(width: 15),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: TextStyle(color: Colors.white70, fontSize: 14)),
-                  Text(value, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text(title,
+                      style: TextStyle(color: Colors.white70, fontSize: 14)),
+                  Text(value,
+                      style: TextStyle(
+                          color: color,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
@@ -12724,10 +14041,354 @@ class TurbidityTestingScreen extends StatelessWidget {
     );
   }
 }
+
+class TDSTestingScreen extends StatelessWidget {
+  final double tds;
+  final VoidCallback onNext;
+
+  const TDSTestingScreen({Key? key, required this.tds, required this.onNext})
+      : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final status = tds > 1000
+        ? 'Poor'
+        : tds > 500
+            ? 'Moderate'
+            : 'Good';
+    final color = tds > 1000
+        ? Colors.redAccent
+        : tds > 500
+            ? Colors.orangeAccent
+            : Colors.greenAccent;
+
+    return Scaffold(
+      body: Column(
+        children: [
+          // Header Section
+          Container(
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF1A237E), Color(0xFF283593)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.water, size: 40, color: Colors.white),
+                    SizedBox(width: 10),
+                    Text('TDS Testing',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                SizedBox(height: 10),
+                Text('Total Dissolved Solids measurement',
+                    style: TextStyle(color: Colors.white70, fontSize: 14)),
+              ],
+            ),
+          ),
+
+          // TDS Content Section
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    // Main TDS Display - Single row
+                    Card(
+                      color: Color(0xFF1E1E2C),
+                      child: Padding(
+                        padding: EdgeInsets.all(25),
+                        child: Column(
+                          children: [
+                            Text(
+                              'TOTAL DISSOLVED SOLIDS',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 16),
+                            ),
+                            SizedBox(height: 10),
+                            Text(
+                              '${tds.toStringAsFixed(0)} ppm',
+                              style: TextStyle(
+                                  fontSize: 48,
+                                  fontWeight: FontWeight.bold,
+                                  color: color),
+                            ),
+                            SizedBox(height: 10),
+                            Container(
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: color.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                'WATER QUALITY: $status',
+                                style: TextStyle(
+                                    fontSize: 18,
+                                    color: color,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 20),
+
+                    // TDS Scale - Single row
+                    Card(
+                      color: Color(0xFF1E1E2C),
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            Text('TDS Quality Scale',
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 16)),
+                            SizedBox(height: 15),
+                            LinearProgressIndicator(
+                              value: tds / 2000,
+                              backgroundColor: Colors.grey[800],
+                              valueColor: AlwaysStoppedAnimation<Color>(color),
+                              minHeight: 20,
+                            ),
+                            SizedBox(height: 10),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Column(
+                                  children: [
+                                    Text('0-300',
+                                        style: TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12)),
+                                    Text('Excellent',
+                                        style: TextStyle(
+                                            color: Colors.greenAccent,
+                                            fontSize: 10)),
+                                  ],
+                                ),
+                                Column(
+                                  children: [
+                                    Text('300-600',
+                                        style: TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12)),
+                                    Text('Good',
+                                        style: TextStyle(
+                                            color: Colors.blueAccent,
+                                            fontSize: 10)),
+                                  ],
+                                ),
+                                Column(
+                                  children: [
+                                    Text('600-900',
+                                        style: TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12)),
+                                    Text('Fair',
+                                        style: TextStyle(
+                                            color: Colors.orangeAccent,
+                                            fontSize: 10)),
+                                  ],
+                                ),
+                                Column(
+                                  children: [
+                                    Text('900+',
+                                        style: TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12)),
+                                    Text('Poor',
+                                        style: TextStyle(
+                                            color: Colors.redAccent,
+                                            fontSize: 10)),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 15),
+
+                    // Water Quality Metrics - Single rows
+                    _buildQualityCard(
+                        'Mineral Content',
+                        '${(tds * 0.7).toStringAsFixed(0)} ppm',
+                        Icons.eco,
+                        Colors.tealAccent),
+                    SizedBox(height: 15),
+                    _buildQualityCard(
+                        'Purity Level',
+                        '${(100 - (tds / 20)).toStringAsFixed(1)}%',
+                        Icons.clean_hands,
+                        Colors.blueAccent),
+                    SizedBox(height: 15),
+                    _buildQualityCard(
+                        'Drinkability',
+                        tds < 600 ? 'Safe' : 'Not Recommended',
+                        Icons.local_drink,
+                        tds < 600 ? Colors.greenAccent : Colors.redAccent),
+                    SizedBox(height: 15),
+
+                    // Recommendation Card
+                    Card(
+                      color: Color(0xFF1E1E2C),
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: color.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(Icons.recommend, color: color),
+                            ),
+                            SizedBox(width: 15),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Recommendation',
+                                      style: TextStyle(
+                                          color: Colors.white70, fontSize: 14)),
+                                  Text(
+                                    tds < 300
+                                        ? 'Excellent for drinking'
+                                        : tds < 600
+                                            ? 'Good for drinking'
+                                            : 'Consider filtration',
+                                    style: TextStyle(
+                                        color: color,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Action Button Section
+          Container(
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Color(0xFF1E1E2C),
+              border: Border(top: BorderSide(color: Colors.white12)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildActionButton(
+                        Icons.refresh, 'Retest', Colors.blueAccent),
+                    _buildActionButton(
+                        Icons.water_drop, 'Sample', Colors.greenAccent),
+                    _buildActionButton(
+                        Icons.summarize, 'Report', Colors.orangeAccent),
+                  ],
+                ),
+                SizedBox(height: 15),
+                ElevatedButton.icon(
+                  onPressed: onNext,
+                  icon: Icon(Icons.arrow_forward),
+                  label: Text('Next: Eco-Disposal'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent,
+                    minimumSize: Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQualityCard(
+      String title, String value, IconData icon, Color color) {
+    return Card(
+      color: Color(0xFF1E1E2C),
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            SizedBox(width: 15),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: TextStyle(color: Colors.white70, fontSize: 14)),
+                  Text(value,
+                      style: TextStyle(
+                          color: color,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton(IconData icon, String label, Color color) {
+    return Column(
+      children: [
+        Container(
+          padding: EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: color, size: 20),
+        ),
+        SizedBox(height: 5),
+        Text(label, style: TextStyle(color: Colors.white70, fontSize: 12)),
+      ],
+    );
+  }
+}
+
 class EcoDisposalMethodsScreen extends StatelessWidget {
   final VoidCallback onNext;
 
-  const EcoDisposalMethodsScreen({Key? key, required this.onNext}) : super(key: key);
+  const EcoDisposalMethodsScreen({Key? key, required this.onNext})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -12759,29 +14420,38 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
                         color: Colors.white.withOpacity(0.1),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(Icons.recycling, size: 32, color: Colors.white),
+                      child:
+                          Icon(Icons.recycling, size: 32, color: Colors.white),
                     ),
                     SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Eco-Disposal Methods', 
-                              style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                          Text('Eco-Disposal Methods',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold)),
                           Text('Sustainable waste conversion technologies',
-                              style: TextStyle(color: Colors.white70, fontSize: 12)),
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 12)),
                         ],
                       ),
                     ),
                     Container(
-                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
                         color: Colors.greenAccent.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: Colors.greenAccent),
                       ),
-                      child: Text('ACTIVE', 
-                          style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                      child: Text('ACTIVE',
+                          style: TextStyle(
+                              color: Colors.greenAccent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
@@ -12790,7 +14460,7 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
               ],
             ),
           ),
-          
+
           // Main Content Grid
           Expanded(
             child: Padding(
@@ -12842,15 +14512,15 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
                       ],
                     ),
                     SizedBox(height: 20),
-                    
+
                     // Efficiency Metrics Card
                     _buildEfficiencyCard(),
                     SizedBox(height: 20),
-                    
+
                     // Environmental Benefits Card
                     _buildBenefitsCard(),
                     SizedBox(height: 20),
-                    
+
                     // Process Flow Card
                     _buildProcessFlowCard(),
                   ],
@@ -12858,7 +14528,7 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
               ),
             ),
           ),
-          
+
           // Action Panel
           Container(
             padding: EdgeInsets.all(16),
@@ -12871,9 +14541,12 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildActionButton(Icons.analytics, 'Analytics', Colors.blueAccent),
-                    _buildActionButton(Icons.schedule, 'Schedule', Colors.greenAccent),
-                    _buildActionButton(Icons.settings, 'Configure', Colors.orangeAccent),
+                    _buildActionButton(
+                        Icons.analytics, 'Analytics', Colors.blueAccent),
+                    _buildActionButton(
+                        Icons.schedule, 'Schedule', Colors.greenAccent),
+                    _buildActionButton(
+                        Icons.settings, 'Configure', Colors.orangeAccent),
                   ],
                 ),
                 SizedBox(height: 12),
@@ -12909,15 +14582,19 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildImpactStat('CO₂ Reduced', '2.4t', Icons.cloud_off, Colors.greenAccent),
-          _buildImpactStat('Energy Saved', '1.8MWh', Icons.energy_savings_leaf, Colors.blueAccent),
-          _buildImpactStat('Water Saved', '45kL', Icons.water_drop, Colors.tealAccent),
+          _buildImpactStat(
+              'CO₂ Reduced', '2.4t', Icons.cloud_off, Colors.greenAccent),
+          _buildImpactStat('Energy Saved', '1.8MWh', Icons.energy_savings_leaf,
+              Colors.blueAccent),
+          _buildImpactStat(
+              'Water Saved', '45kL', Icons.water_drop, Colors.tealAccent),
         ],
       ),
     );
   }
 
-  Widget _buildImpactStat(String label, String value, IconData icon, Color color) {
+  Widget _buildImpactStat(
+      String label, String value, IconData icon, Color color) {
     return Column(
       children: [
         Container(
@@ -12929,13 +14606,16 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
           child: Icon(icon, size: 16, color: color),
         ),
         SizedBox(height: 4),
-        Text(value, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+        Text(value,
+            style: TextStyle(
+                color: color, fontSize: 12, fontWeight: FontWeight.bold)),
         Text(label, style: TextStyle(color: Colors.white70, fontSize: 10)),
       ],
     );
   }
 
-  Widget _buildMethodCard(String title, String value, IconData icon, Color color, String description, int efficiency) {
+  Widget _buildMethodCard(String title, String value, IconData icon,
+      Color color, String description, int efficiency) {
     return Container(
       decoration: BoxDecoration(
         color: Color(0xFF1E1E2C),
@@ -12971,16 +14651,23 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
                     color: color.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text('$efficiency%', 
-                      style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+                  child: Text('$efficiency%',
+                      style: TextStyle(
+                          color: color,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
             SizedBox(height: 8),
-            Text(title, 
-                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-            Text(value, 
-                style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(title,
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold)),
+            Text(value,
+                style: TextStyle(
+                    color: color, fontSize: 16, fontWeight: FontWeight.bold)),
             SizedBox(height: 4),
             Text(description,
                 style: TextStyle(color: Colors.white54, fontSize: 10)),
@@ -13013,16 +14700,23 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
               children: [
                 Icon(Icons.trending_up, color: Colors.greenAccent, size: 20),
                 SizedBox(width: 8),
-                Text('System Efficiency', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                Text('System Efficiency',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
               ],
             ),
             SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildEfficiencyMetric('Conversion Rate', '89.2%', Colors.greenAccent),
-                _buildEfficiencyMetric('Waste Reduction', '94.7%', Colors.blueAccent),
-                _buildEfficiencyMetric('Energy Output', '82.3%', Colors.orangeAccent),
+                _buildEfficiencyMetric(
+                    'Conversion Rate', '89.2%', Colors.greenAccent),
+                _buildEfficiencyMetric(
+                    'Waste Reduction', '94.7%', Colors.blueAccent),
+                _buildEfficiencyMetric(
+                    'Energy Output', '82.3%', Colors.orangeAccent),
               ],
             ),
             SizedBox(height: 12),
@@ -13039,7 +14733,8 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text('All systems operating at optimal efficiency',
-                        style: TextStyle(color: Colors.greenAccent, fontSize: 12)),
+                        style:
+                            TextStyle(color: Colors.greenAccent, fontSize: 12)),
                   ),
                 ],
               ),
@@ -13053,7 +14748,9 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
   Widget _buildEfficiencyMetric(String label, String value, Color color) {
     return Column(
       children: [
-        Text(value, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(value,
+            style: TextStyle(
+                color: color, fontSize: 18, fontWeight: FontWeight.bold)),
         Text(label, style: TextStyle(color: Colors.white70, fontSize: 10)),
       ],
     );
@@ -13074,7 +14771,11 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
               children: [
                 Icon(Icons.eco, color: Colors.tealAccent, size: 20),
                 SizedBox(width: 8),
-                Text('Environmental Benefits', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                Text('Environmental Benefits',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
               ],
             ),
             SizedBox(height: 12),
@@ -13082,12 +14783,17 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _buildBenefitChip('Zero Waste', Icons.all_inclusive, Colors.greenAccent),
-                _buildBenefitChip('Carbon Neutral', Icons.co2, Colors.blueAccent),
-                _buildBenefitChip('Renewable', Icons.autorenew, Colors.orangeAccent),
-                _buildBenefitChip('Sustainable', Icons.psychology, Colors.purpleAccent),
+                _buildBenefitChip(
+                    'Zero Waste', Icons.all_inclusive, Colors.greenAccent),
+                _buildBenefitChip(
+                    'Carbon Neutral', Icons.co2, Colors.blueAccent),
+                _buildBenefitChip(
+                    'Renewable', Icons.autorenew, Colors.orangeAccent),
+                _buildBenefitChip(
+                    'Sustainable', Icons.psychology, Colors.purpleAccent),
                 _buildBenefitChip('Circular', Icons.cached, Colors.tealAccent),
-                _buildBenefitChip('Green Tech', Icons.engineering, Colors.yellowAccent),
+                _buildBenefitChip(
+                    'Green Tech', Icons.engineering, Colors.yellowAccent),
               ],
             ),
           ],
@@ -13130,21 +14836,30 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
               children: [
                 Icon(Icons.account_tree, color: Colors.purpleAccent, size: 20),
                 SizedBox(width: 8),
-                Text('Disposal Process Flow', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                Text('Disposal Process Flow',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
               ],
             ),
             SizedBox(height: 12),
-            _buildProcessStep('Collection', 'Waste gathering', Icons.cleaning_services, Colors.blueAccent),
-            _buildProcessStep('Segregation', 'Material separation', Icons.filter_alt, Colors.greenAccent),
-            _buildProcessStep('Processing', 'Conversion treatment', Icons.settings, Colors.orangeAccent),
-            _buildProcessStep('Output', 'Final products', Icons.output, Colors.purpleAccent),
+            _buildProcessStep('Collection', 'Waste gathering',
+                Icons.cleaning_services, Colors.blueAccent),
+            _buildProcessStep('Segregation', 'Material separation',
+                Icons.filter_alt, Colors.greenAccent),
+            _buildProcessStep('Processing', 'Conversion treatment',
+                Icons.settings, Colors.orangeAccent),
+            _buildProcessStep(
+                'Output', 'Final products', Icons.output, Colors.purpleAccent),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildProcessStep(String title, String description, IconData icon, Color color) {
+  Widget _buildProcessStep(
+      String title, String description, IconData icon, Color color) {
     return Container(
       margin: EdgeInsets.only(bottom: 8),
       padding: EdgeInsets.all(12),
@@ -13167,8 +14882,10 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(color: Colors.white, fontSize: 12)),
-                Text(description, style: TextStyle(color: Colors.white54, fontSize: 10)),
+                Text(title,
+                    style: TextStyle(color: Colors.white, fontSize: 12)),
+                Text(description,
+                    style: TextStyle(color: Colors.white54, fontSize: 10)),
               ],
             ),
           ),
@@ -13202,7 +14919,8 @@ class EcoDisposalMethodsScreen extends StatelessWidget {
 class PredictiveAnalyticsScreen extends StatelessWidget {
   final VoidCallback onNext;
 
-  const PredictiveAnalyticsScreen({Key? key, required this.onNext}) : super(key: key);
+  const PredictiveAnalyticsScreen({Key? key, required this.onNext})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -13225,8 +14943,11 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
                   children: [
                     Icon(Icons.analytics, size: 40, color: Colors.white),
                     SizedBox(width: 10),
-                    Text('Predictive Analytics', 
-                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    Text('Predictive Analytics',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
                 SizedBox(height: 10),
@@ -13235,7 +14956,7 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
               ],
             ),
           ),
-          
+
           // Analytics Cards Section
           Expanded(
             child: Padding(
@@ -13254,7 +14975,7 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
                       _buildRiskIndicator(0.15),
                     ),
                     SizedBox(height: 15),
-                    
+
                     // Hyacinth Growth Card
                     _buildAnalyticsCard(
                       'Hyacinth Growth',
@@ -13266,7 +14987,7 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
                       _buildRiskIndicator(0.85),
                     ),
                     SizedBox(height: 15),
-                    
+
                     // Water Quality Card
                     _buildAnalyticsCard(
                       'Water Quality',
@@ -13278,7 +14999,7 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
                       _buildTrendIndicator(true),
                     ),
                     SizedBox(height: 15),
-                    
+
                     // Maintenance Card
                     _buildAnalyticsCard(
                       'Maintenance',
@@ -13290,7 +15011,7 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
                       _buildMaintenanceIndicator(),
                     ),
                     SizedBox(height: 15),
-                    
+
                     // Statistics Overview Card
                     Card(
                       color: Color(0xFF1E1E2C),
@@ -13307,20 +15028,25 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
                                     color: Colors.purpleAccent.withOpacity(0.1),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(Icons.bar_chart, color: Colors.purpleAccent),
+                                  child: Icon(Icons.bar_chart,
+                                      color: Colors.purpleAccent),
                                 ),
                                 SizedBox(width: 15),
-                                Text('Risk Overview', 
-                                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                                Text('Risk Overview',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold)),
                               ],
                             ),
                             SizedBox(height: 15),
-                            
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
-                                _buildStatItem('Low Risk', '2', Colors.greenAccent),
-                                _buildStatItem('Medium', '1', Colors.orangeAccent),
+                                _buildStatItem(
+                                    'Low Risk', '2', Colors.greenAccent),
+                                _buildStatItem(
+                                    'Medium', '1', Colors.orangeAccent),
                                 _buildStatItem('High', '1', Colors.redAccent),
                               ],
                             ),
@@ -13329,7 +15055,7 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
                       ),
                     ),
                     SizedBox(height: 15),
-                    
+
                     // AI Recommendations Card
                     Card(
                       color: Color(0xFF1E1E2C),
@@ -13346,29 +15072,30 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
                                     color: Colors.yellowAccent.withOpacity(0.1),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(Icons.lightbulb, color: Colors.yellowAccent),
+                                  child: Icon(Icons.lightbulb,
+                                      color: Colors.yellowAccent),
                                 ),
                                 SizedBox(width: 15),
-                                Text('AI Recommendations', 
-                                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                                Text('AI Recommendations',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold)),
                               ],
                             ),
                             SizedBox(height: 10),
-                            
                             _buildRecommendation(
                               'Deploy Bot #3 for maintenance',
                               Icons.build,
                               Colors.blueAccent,
                             ),
                             SizedBox(height: 8),
-                            
                             _buildRecommendation(
                               'Monitor hyacinth growth areas',
                               Icons.visibility,
                               Colors.greenAccent,
                             ),
                             SizedBox(height: 8),
-                            
                             _buildRecommendation(
                               'Prepare flood prevention measures',
                               Icons.security,
@@ -13383,7 +15110,7 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
               ),
             ),
           ),
-          
+
           // Action Button Section
           Container(
             padding: EdgeInsets.all(16),
@@ -13396,9 +15123,12 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildActionButton(Icons.refresh, 'Refresh', Colors.blueAccent),
-                    _buildActionButton(Icons.download, 'Export', Colors.greenAccent),
-                    _buildActionButton(Icons.notifications, 'Alerts', Colors.orangeAccent),
+                    _buildActionButton(
+                        Icons.refresh, 'Refresh', Colors.blueAccent),
+                    _buildActionButton(
+                        Icons.download, 'Export', Colors.greenAccent),
+                    _buildActionButton(
+                        Icons.notifications, 'Alerts', Colors.orangeAccent),
                   ],
                 ),
                 SizedBox(height: 15),
@@ -13422,8 +15152,8 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildAnalyticsCard(String title, String timeframe, IconData icon, Color color, 
-                            String prediction, double value, Widget indicator) {
+  Widget _buildAnalyticsCard(String title, String timeframe, IconData icon,
+      Color color, String prediction, double value, Widget indicator) {
     return Card(
       color: Color(0xFF1E1E2C),
       child: Padding(
@@ -13446,10 +15176,14 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title, 
-                          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                      Text(title,
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold)),
                       Text(timeframe,
-                          style: TextStyle(color: Colors.white70, fontSize: 12)),
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 12)),
                     ],
                   ),
                 ),
@@ -13460,7 +15194,10 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(prediction,
-                      style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
+                      style: TextStyle(
+                          color: color,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
@@ -13478,9 +15215,12 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('0%', style: TextStyle(color: Colors.white54, fontSize: 12)),
-                Text('Probability', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                Text('100%', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                Text('0%',
+                    style: TextStyle(color: Colors.white54, fontSize: 12)),
+                Text('Probability',
+                    style: TextStyle(color: Colors.white70, fontSize: 12)),
+                Text('100%',
+                    style: TextStyle(color: Colors.white54, fontSize: 12)),
               ],
             ),
           ],
@@ -13492,7 +15232,7 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
   Widget _buildRiskIndicator(double value) {
     Color color;
     String status;
-    
+
     if (value < 0.3) {
       color = Colors.greenAccent;
       status = 'LOW RISK';
@@ -13503,12 +15243,14 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
       color = Colors.redAccent;
       status = 'HIGH RISK';
     }
-    
+
     return Row(
       children: [
         Icon(Icons.circle, color: color, size: 12),
         SizedBox(width: 8),
-        Text(status, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
+        Text(status,
+            style: TextStyle(
+                color: color, fontSize: 14, fontWeight: FontWeight.bold)),
       ],
     );
   }
@@ -13525,10 +15267,9 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
         Text(
           improving ? 'IMPROVING' : 'DETERIORATING',
           style: TextStyle(
-            color: improving ? Colors.greenAccent : Colors.redAccent,
-            fontSize: 14,
-            fontWeight: FontWeight.bold
-          ),
+              color: improving ? Colors.greenAccent : Colors.redAccent,
+              fontSize: 14,
+              fontWeight: FontWeight.bold),
         ),
       ],
     );
@@ -13539,8 +15280,11 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
       children: [
         Icon(Icons.warning, color: Colors.orangeAccent, size: 20),
         SizedBox(width: 8),
-        Text('MAINTENANCE REQUIRED', 
-            style: TextStyle(color: Colors.orangeAccent, fontSize: 14, fontWeight: FontWeight.bold)),
+        Text('MAINTENANCE REQUIRED',
+            style: TextStyle(
+                color: Colors.orangeAccent,
+                fontSize: 14,
+                fontWeight: FontWeight.bold)),
       ],
     );
   }
@@ -13558,7 +15302,8 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
           ),
           child: Center(
             child: Text(value,
-                style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
+                style: TextStyle(
+                    color: color, fontSize: 18, fontWeight: FontWeight.bold)),
           ),
         ),
         SizedBox(height: 5),
@@ -13611,19 +15356,23 @@ class PredictiveAnalyticsScreen extends StatelessWidget {
     );
   }
 }
+
 class FleetManagementScreen extends StatelessWidget {
   final VoidCallback onNext;
 
-  const FleetManagementScreen({Key? key, required this.onNext}) : super(key: key);
+  const FleetManagementScreen({Key? key, required this.onNext})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final bots = List.generate(8, (index) => {
-      'name': 'OPTIMUS-${index + 1}',
-      'status': ['Active', 'Charging', 'Maintenance'][index % 3],
-      'battery': 20 + Random().nextInt(80),
-      'zone': ['A', 'B', 'C', 'D'][index % 4],
-    });
+    final bots = List.generate(
+        8,
+        (index) => {
+              'name': 'OPTIMUS-${index + 1}',
+              'status': ['Active', 'Charging', 'Maintenance'][index % 3],
+              'battery': 20 + Random().nextInt(80),
+              'zone': ['A', 'B', 'C', 'D'][index % 4],
+            });
 
     return Scaffold(
       body: Column(
@@ -13643,8 +15392,11 @@ class FleetManagementScreen extends StatelessWidget {
                   children: [
                     Icon(Icons.directions_boat, size: 40, color: Colors.white),
                     SizedBox(width: 10),
-                    Text('Fleet Management', 
-                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    Text('Fleet Management',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
               ],
@@ -13659,7 +15411,7 @@ class FleetManagementScreen extends StatelessWidget {
                 final name = bot['name'] as String;
                 final battery = bot['battery'] as int;
                 final zone = bot['zone'] as String;
-                
+
                 return Card(
                   margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   color: Color(0xFF1E1E2C),
@@ -13669,11 +15421,14 @@ class FleetManagementScreen extends StatelessWidget {
                       child: Icon(Icons.engineering, color: Colors.white),
                     ),
                     title: Text(name, style: TextStyle(color: Colors.white)),
-                    subtitle: Text('$status • Zone $zone', style: TextStyle(color: Colors.white70)),
+                    subtitle: Text('$status • Zone $zone',
+                        style: TextStyle(color: Colors.white70)),
                     trailing: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text('$battery%', style: TextStyle(color: _getBatteryColor(battery.toDouble()))),
+                        Text('$battery%',
+                            style: TextStyle(
+                                color: _getBatteryColor(battery.toDouble()))),
                         SizedBox(height: 4),
                         Container(
                           width: 40,
@@ -13709,10 +15464,14 @@ class FleetManagementScreen extends StatelessWidget {
 
   Color _getStatusColor(String status) {
     switch (status) {
-      case 'Active': return Colors.greenAccent;
-      case 'Charging': return Colors.orangeAccent;
-      case 'Maintenance': return Colors.redAccent;
-      default: return Colors.grey;
+      case 'Active':
+        return Colors.greenAccent;
+      case 'Charging':
+        return Colors.orangeAccent;
+      case 'Maintenance':
+        return Colors.redAccent;
+      default:
+        return Colors.grey;
     }
   }
 
@@ -13721,7 +15480,9 @@ class FleetManagementScreen extends StatelessWidget {
     if (level > 30) return Colors.orangeAccent;
     return Colors.redAccent;
   }
-}class CitizenPortalScreen extends StatelessWidget {
+}
+
+class CitizenPortalScreen extends StatelessWidget {
   final VoidCallback onNext;
 
   const CitizenPortalScreen({Key? key, required this.onNext}) : super(key: key);
@@ -13759,10 +15520,14 @@ class FleetManagementScreen extends StatelessWidget {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Citizen Portal', 
-                              style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-                          Text('Community Engagement Platform', 
-                              style: TextStyle(color: Colors.white70, fontSize: 14)),
+                          Text('Citizen Portal',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold)),
+                          Text('Community Engagement Platform',
+                              style: TextStyle(
+                                  color: Colors.white70, fontSize: 14)),
                         ],
                       ),
                     ],
@@ -13771,7 +15536,7 @@ class FleetManagementScreen extends StatelessWidget {
               ),
             ),
           ),
-          
+
           Expanded(
             child: SingleChildScrollView(
               padding: EdgeInsets.all(16),
@@ -13788,70 +15553,64 @@ class FleetManagementScreen extends StatelessWidget {
                     ),
                   ),
                   SizedBox(height: 20),
-                  
+
                   // Individual Service Containers
                   _buildServiceContainer(
-                    'Report Issue', 
-                    Icons.report, 
-                    Colors.redAccent,
-                    'Issue Reporting System',
-                    () => _showReportDialog(context)
-                  ),
-                  
+                      'Report Issue',
+                      Icons.report,
+                      Colors.redAccent,
+                      'Issue Reporting System',
+                      () => _showReportDialog(context)),
+
                   SizedBox(height: 12),
-                  
+
                   _buildServiceContainer(
-                    'Volunteer', 
-                    Icons.volunteer_activism, 
-                    Colors.greenAccent,
-                    'Community Support',
-                    () => _showVolunteerDialog(context)
-                  ),
-                  
+                      'Volunteer',
+                      Icons.volunteer_activism,
+                      Colors.greenAccent,
+                      'Community Support',
+                      () => _showVolunteerDialog(context)),
+
                   SizedBox(height: 12),
-                  
+
                   _buildServiceContainer(
-                    'Live Camera', 
-                    Icons.videocam, 
-                    Colors.blueAccent,
-                    'Live Monitoring Feed',
-                    () => _showLiveCamera(context)
-                  ),
-                  
+                      'Live Camera',
+                      Icons.videocam,
+                      Colors.blueAccent,
+                      'Live Monitoring Feed',
+                      () => _showLiveCamera(context)),
+
                   SizedBox(height: 12),
-                  
+
                   _buildServiceContainer(
-                    'Eco Tips', 
-                    Icons.eco, 
-                    Colors.tealAccent,
-                    'Sustainability Guide',
-                    () => _showEcoTips(context)
-                  ),
-                  
+                      'Eco Tips',
+                      Icons.eco,
+                      Colors.tealAccent,
+                      'Sustainability Guide',
+                      () => _showEcoTips(context)),
+
                   SizedBox(height: 12),
-                  
+
                   _buildServiceContainer(
-                    'Events', 
-                    Icons.event, 
-                    Colors.orangeAccent,
-                    'Community Calendar',
-                    () => _showEvents(context)
-                  ),
-                  
+                      'Events',
+                      Icons.event,
+                      Colors.orangeAccent,
+                      'Community Calendar',
+                      () => _showEvents(context)),
+
                   SizedBox(height: 12),
-                  
+
                   _buildServiceContainer(
-                    'Education', 
-                    Icons.school, 
-                    Colors.purpleAccent,
-                    'Learning Resources',
-                    () => _showEducation(context)
-                  ),
+                      'Education',
+                      Icons.school,
+                      Colors.purpleAccent,
+                      'Learning Resources',
+                      () => _showEducation(context)),
                 ],
               ),
             ),
           ),
-          
+
           // Next Button Container
           Container(
             padding: EdgeInsets.all(16),
@@ -13882,7 +15641,8 @@ class FleetManagementScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildServiceContainer(String title, IconData icon, Color color, String operationText, VoidCallback onTap) {
+  Widget _buildServiceContainer(String title, IconData icon, Color color,
+      String operationText, VoidCallback onTap) {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(16),
@@ -13945,27 +15705,29 @@ class FleetManagementScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Color(0xFF1E1E2C),
-        title: Text('Report Environmental Issue', 
+        title: Text('Report Environmental Issue',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               decoration: InputDecoration(
-                labelText: 'Issue Description', 
+                labelText: 'Issue Description',
                 labelStyle: TextStyle(color: Colors.white70),
                 border: OutlineInputBorder(),
-                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
+                enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.blueAccent)),
               ),
               style: TextStyle(color: Colors.white),
             ),
             SizedBox(height: 10),
             TextField(
               decoration: InputDecoration(
-                labelText: 'Location', 
+                labelText: 'Location',
                 labelStyle: TextStyle(color: Colors.white70),
                 border: OutlineInputBorder(),
-                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.blueAccent)),
+                enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: Colors.blueAccent)),
               ),
               style: TextStyle(color: Colors.white),
             ),
@@ -13981,7 +15743,7 @@ class FleetManagementScreen extends StatelessWidget {
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Issue reported successfully!'), 
+                  content: Text('Issue reported successfully!'),
                   backgroundColor: Colors.green,
                 ),
               );
@@ -13999,9 +15761,10 @@ class FleetManagementScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Color(0xFF1E1E2C),
-        title: Text('Join as Volunteer', 
+        title: Text('Join as Volunteer',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: Text('Thank you for your interest! Our team will contact you soon.', 
+        content: Text(
+            'Thank you for your interest! Our team will contact you soon.',
             style: TextStyle(color: Colors.white70)),
         actions: [
           ElevatedButton(
@@ -14025,8 +15788,11 @@ class FleetManagementScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Live Camera Feed', 
-                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+              Text('Live Camera Feed',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold)),
               SizedBox(height: 15),
               Container(
                 height: 200,
@@ -14035,7 +15801,8 @@ class FleetManagementScreen extends StatelessWidget {
                   color: Colors.black,
                   borderRadius: BorderRadius.circular(12),
                   image: DecorationImage(
-                    image: NetworkImage('https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400'),
+                    image: NetworkImage(
+                        'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400'),
                     fit: BoxFit.cover,
                   ),
                 ),
@@ -14043,7 +15810,8 @@ class FleetManagementScreen extends StatelessWidget {
               SizedBox(height: 20),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent),
                 child: Text('Close'),
               ),
             ],
@@ -14058,7 +15826,7 @@ class FleetManagementScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Color(0xFF1E1E2C),
-        title: Text('Eco-Friendly Tips', 
+        title: Text('Eco-Friendly Tips',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: SingleChildScrollView(
           child: Text(
@@ -14082,7 +15850,7 @@ class FleetManagementScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Color(0xFF1E1E2C),
-        title: Text('Upcoming Events', 
+        title: Text('Upcoming Events',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: SingleChildScrollView(
           child: Text(
@@ -14106,7 +15874,7 @@ class FleetManagementScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Color(0xFF1E1E2C),
-        title: Text('Educational Resources', 
+        title: Text('Educational Resources',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: SingleChildScrollView(
           child: Text(
@@ -14160,13 +15928,16 @@ class ContactScreen extends StatelessWidget {
                 children: [
                   Icon(Icons.contact_page, size: 40, color: Colors.white),
                   SizedBox(width: 15),
-                  Text('Contact Us', 
-                      style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                  Text('Contact Us',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
           ),
-          
+
           Expanded(
             child: SingleChildScrollView(
               padding: EdgeInsets.all(16),
@@ -14183,44 +15954,28 @@ class ContactScreen extends StatelessWidget {
                     ),
                   ),
                   SizedBox(height: 20),
-                  
+
                   // Contact Items - Exact layout from screenshot
-                  _buildContactContainer(
-                    Icons.phone,
-                    '+91 7397463420',
-                    '24/7 Support',
-                    Colors.greenAccent
-                  ),
-                  
+                  _buildContactContainer(Icons.phone, '+91 7397463420',
+                      '24/7 Support', Colors.greenAccent),
+
                   SizedBox(height: 12),
-                  
-                  _buildContactContainer(
-                    Icons.email,
-                    'optimusx.tech@gmail.com',
-                    'Email Support',
-                    Colors.blueAccent
-                  ),
-                  
+
+                  _buildContactContainer(Icons.email, 'optimusx.tech@gmail.com',
+                      'Email Support', Colors.blueAccent),
+
                   SizedBox(height: 12),
-                  
-                  _buildContactContainer(
-                    Icons.location_on,
-                    'Chennai, India',
-                    'Headquarters',
-                    Colors.orangeAccent
-                  ),
-                  
+
+                  _buildContactContainer(Icons.location_on, 'Chennai, India',
+                      'Headquarters', Colors.orangeAccent),
+
                   SizedBox(height: 12),
-                  
-                  _buildContactContainer(
-                    Icons.language,
-                    'www.optimusx.tech',
-                    'Website',
-                    Colors.purpleAccent
-                  ),
-                  
+
+                  _buildContactContainer(Icons.language, 'www.optimusx.tech',
+                      'Website', Colors.purpleAccent),
+
                   SizedBox(height: 30),
-                  
+
                   // Additional Info Section
                   Container(
                     width: double.infinity,
@@ -14244,7 +15999,8 @@ class ContactScreen extends StatelessWidget {
                         SizedBox(height: 10),
                         Row(
                           children: [
-                            Icon(Icons.schedule, color: Colors.yellowAccent, size: 20),
+                            Icon(Icons.schedule,
+                                color: Colors.yellowAccent, size: 20),
                             SizedBox(width: 10),
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -14275,7 +16031,7 @@ class ContactScreen extends StatelessWidget {
               ),
             ),
           ),
-          
+
           // Next Button Container
           Container(
             padding: EdgeInsets.all(16),
@@ -14306,7 +16062,8 @@ class ContactScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildContactContainer(IconData icon, String value, String label, Color color) {
+  Widget _buildContactContainer(
+      IconData icon, String value, String label, Color color) {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.all(16),
@@ -14387,8 +16144,11 @@ class JudgesFAQScreen extends StatelessWidget {
                   children: [
                     Icon(Icons.quiz, size: 40, color: Colors.white),
                     SizedBox(width: 10),
-                    Text('Judges FAQ', 
-                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    Text('Judges FAQ',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
               ],
@@ -14400,25 +16160,16 @@ class JudgesFAQScreen extends StatelessWidget {
               child: ListView(
                 children: [
                   _buildFAQItem(
-                    'How does OPTIMUS-X handle dense hyacinth mats?',
-                    'Advanced AI algorithms optimize cutting patterns with dual-conveyor system for continuous operation.'
-                  ),
-                  _buildFAQItem(
-                    'What prevents hyacinth from regrowing?',
-                    'Root removal technology combined with AI-powered monitoring prevents regrowth effectively.'
-                  ),
-                  _buildFAQItem(
-                    'How do you ensure aquatic life safety?',
-                    'Multiple safety systems: slow-moving blades, object detection, noise reduction, emergency stops.'
-                  ),
-                  _buildFAQItem(
-                    'What is your carbon footprint reduction?',
-                    'Solar-powered operation reduces emissions by 65% compared to traditional methods.'
-                  ),
-                  _buildFAQItem(
-                    'How scalable is this solution?',
-                    'Modular design allows fleet coordination across multiple water bodies simultaneously.'
-                  ),
+                      'How does OPTIMUS-X handle dense hyacinth mats?',
+                      'Advanced AI algorithms optimize cutting patterns with dual-conveyor system for continuous operation.'),
+                  _buildFAQItem('What prevents hyacinth from regrowing?',
+                      'Root removal technology combined with AI-powered monitoring prevents regrowth effectively.'),
+                  _buildFAQItem('How do you ensure aquatic life safety?',
+                      'Multiple safety systems: slow-moving blades, object detection, noise reduction, emergency stops.'),
+                  _buildFAQItem('What is your carbon footprint reduction?',
+                      'Solar-powered operation reduces emissions by 65% compared to traditional methods.'),
+                  _buildFAQItem('How scalable is this solution?',
+                      'Modular design allows fleet coordination across multiple water bodies simultaneously.'),
                 ],
               ),
             ),
@@ -14445,7 +16196,8 @@ class JudgesFAQScreen extends StatelessWidget {
       color: Color(0xFF1E1E2C),
       margin: EdgeInsets.symmetric(vertical: 8),
       child: ExpansionTile(
-        title: Text(question, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(question,
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         children: [
           Padding(
             padding: EdgeInsets.all(16),
@@ -14460,7 +16212,8 @@ class JudgesFAQScreen extends StatelessWidget {
 class LogoutScreen extends StatelessWidget {
   final VoidCallback onLogoutComplete;
 
-  const LogoutScreen({Key? key, required this.onLogoutComplete}) : super(key: key);
+  const LogoutScreen({Key? key, required this.onLogoutComplete})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -14499,6 +16252,7 @@ class LogoutScreen extends StatelessWidget {
     );
   }
 }
+
 class DualConveyorControlScreen extends StatefulWidget {
   final double conveyor1Speed;
   final double conveyor2Speed;
@@ -14518,7 +16272,8 @@ class DualConveyorControlScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  _DualConveyorControlScreenState createState() => _DualConveyorControlScreenState();
+  _DualConveyorControlScreenState createState() =>
+      _DualConveyorControlScreenState();
 }
 
 class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
@@ -14557,8 +16312,11 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
                   children: [
                     Icon(Icons.conveyor_belt, size: 40, color: Colors.white),
                     SizedBox(width: 10),
-                    Text('Dual Conveyor Control', 
-                        style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    Text('Dual Conveyor Control',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
                   ],
                 ),
                 SizedBox(height: 10),
@@ -14567,7 +16325,7 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
               ],
             ),
           ),
-          
+
           // Control Cards Section
           Expanded(
             child: Padding(
@@ -14584,11 +16342,12 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
                       Colors.orangeAccent,
                       (value) {
                         setState(() => _conveyor1Speed = value);
-                        widget.onSpeedChange(_conveyor1Speed, _conveyor2Speed, _shredderActive, _compactorActive);
+                        widget.onSpeedChange(_conveyor1Speed, _conveyor2Speed,
+                            _shredderActive, _compactorActive);
                       },
                     ),
                     SizedBox(height: 20),
-                    
+
                     // Secondary Conveyor Card
                     _buildConveyorCard(
                       'Secondary Conveyor',
@@ -14598,11 +16357,12 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
                       Colors.greenAccent,
                       (value) {
                         setState(() => _conveyor2Speed = value);
-                        widget.onSpeedChange(_conveyor1Speed, _conveyor2Speed, _shredderActive, _compactorActive);
+                        widget.onSpeedChange(_conveyor1Speed, _conveyor2Speed,
+                            _shredderActive, _compactorActive);
                       },
                     ),
                     SizedBox(height: 20),
-                    
+
                     // System Controls Card
                     Card(
                       color: Color(0xFF1E1E2C),
@@ -14619,15 +16379,19 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
                                     color: Colors.purpleAccent.withOpacity(0.1),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(Icons.settings, color: Colors.purpleAccent),
+                                  child: Icon(Icons.settings,
+                                      color: Colors.purpleAccent),
                                 ),
                                 SizedBox(width: 15),
-                                Text('System Controls', 
-                                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                                Text('System Controls',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold)),
                               ],
                             ),
                             SizedBox(height: 20),
-                            
+
                             // Shredder Control
                             _buildSystemControl(
                               'Hyacinth Shredder',
@@ -14637,11 +16401,15 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
                               Colors.redAccent,
                               (value) {
                                 setState(() => _shredderActive = value);
-                                widget.onSpeedChange(_conveyor1Speed, _conveyor2Speed, _shredderActive, _compactorActive);
+                                widget.onSpeedChange(
+                                    _conveyor1Speed,
+                                    _conveyor2Speed,
+                                    _shredderActive,
+                                    _compactorActive);
                               },
                             ),
                             SizedBox(height: 15),
-                            
+
                             // Compactor Control
                             _buildSystemControl(
                               'Compactor System',
@@ -14651,7 +16419,11 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
                               Colors.blueAccent,
                               (value) {
                                 setState(() => _compactorActive = value);
-                                widget.onSpeedChange(_conveyor1Speed, _conveyor2Speed, _shredderActive, _compactorActive);
+                                widget.onSpeedChange(
+                                    _conveyor1Speed,
+                                    _conveyor2Speed,
+                                    _shredderActive,
+                                    _compactorActive);
                               },
                             ),
                           ],
@@ -14659,7 +16431,7 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
                       ),
                     ),
                     SizedBox(height: 20),
-                    
+
                     // Status Overview Card
                     Card(
                       color: Color(0xFF1E1E2C),
@@ -14676,22 +16448,33 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
                                     color: Colors.tealAccent.withOpacity(0.1),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(Icons.analytics, color: Colors.tealAccent),
+                                  child: Icon(Icons.analytics,
+                                      color: Colors.tealAccent),
                                 ),
                                 SizedBox(width: 15),
-                                Text('System Status', 
-                                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                                Text('System Status',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold)),
                               ],
                             ),
                             SizedBox(height: 15),
-                            
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
-                                _buildStatusIndicator('Conveyor 1', _conveyor1Speed, Colors.orangeAccent),
-                                _buildStatusIndicator('Conveyor 2', _conveyor2Speed, Colors.greenAccent),
-                                _buildStatusIndicator('Shredder', _shredderActive ? 1.0 : 0.0, Colors.redAccent),
-                                _buildStatusIndicator('Compactor', _compactorActive ? 1.0 : 0.0, Colors.blueAccent),
+                                _buildStatusIndicator('Conveyor 1',
+                                    _conveyor1Speed, Colors.orangeAccent),
+                                _buildStatusIndicator('Conveyor 2',
+                                    _conveyor2Speed, Colors.greenAccent),
+                                _buildStatusIndicator(
+                                    'Shredder',
+                                    _shredderActive ? 1.0 : 0.0,
+                                    Colors.redAccent),
+                                _buildStatusIndicator(
+                                    'Compactor',
+                                    _compactorActive ? 1.0 : 0.0,
+                                    Colors.blueAccent),
                               ],
                             ),
                           ],
@@ -14699,7 +16482,7 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
                       ),
                     ),
                     SizedBox(height: 20),
-                    
+
                     // Performance Metrics Card
                     Card(
                       color: Color(0xFF1E1E2C),
@@ -14716,20 +16499,29 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
                                     color: Colors.yellowAccent.withOpacity(0.1),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(Icons.speed, color: Colors.yellowAccent),
+                                  child: Icon(Icons.speed,
+                                      color: Colors.yellowAccent),
                                 ),
                                 SizedBox(width: 15),
-                                Text('Performance Metrics', 
-                                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                                Text('Performance Metrics',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold)),
                               ],
                             ),
                             SizedBox(height: 15),
-                            
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                _buildMetricCard('Throughput', '${(_conveyor1Speed * 50 + _conveyor2Speed * 30).toStringAsFixed(0)} kg/h', Icons.trending_up),
-                                _buildMetricCard('Efficiency', '${((_conveyor1Speed + _conveyor2Speed) / 2 * 100).toStringAsFixed(0)}%', Icons.energy_savings_leaf),
+                                _buildMetricCard(
+                                    'Throughput',
+                                    '${(_conveyor1Speed * 50 + _conveyor2Speed * 30).toStringAsFixed(0)} kg/h',
+                                    Icons.trending_up),
+                                _buildMetricCard(
+                                    'Efficiency',
+                                    '${((_conveyor1Speed + _conveyor2Speed) / 2 * 100).toStringAsFixed(0)}%',
+                                    Icons.energy_savings_leaf),
                               ],
                             ),
                           ],
@@ -14741,7 +16533,7 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
               ),
             ),
           ),
-          
+
           // Action Button Section
           Container(
             padding: EdgeInsets.all(16),
@@ -14754,25 +16546,30 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildActionButton(Icons.play_arrow, 'Start All', Colors.greenAccent, () {
+                    _buildActionButton(
+                        Icons.play_arrow, 'Start All', Colors.greenAccent, () {
                       setState(() {
                         _conveyor1Speed = 0.5;
                         _conveyor2Speed = 0.5;
                         _shredderActive = true;
                         _compactorActive = true;
                       });
-                      widget.onSpeedChange(_conveyor1Speed, _conveyor2Speed, _shredderActive, _compactorActive);
+                      widget.onSpeedChange(_conveyor1Speed, _conveyor2Speed,
+                          _shredderActive, _compactorActive);
                     }),
-                    _buildActionButton(Icons.stop, 'Stop All', Colors.redAccent, () {
+                    _buildActionButton(Icons.stop, 'Stop All', Colors.redAccent,
+                        () {
                       setState(() {
                         _conveyor1Speed = 0.0;
                         _conveyor2Speed = 0.0;
                         _shredderActive = false;
                         _compactorActive = false;
                       });
-                      widget.onSpeedChange(_conveyor1Speed, _conveyor2Speed, _shredderActive, _compactorActive);
+                      widget.onSpeedChange(_conveyor1Speed, _conveyor2Speed,
+                          _shredderActive, _compactorActive);
                     }),
-                    _buildActionButton(Icons.autorenew, 'Auto', Colors.blueAccent, () {
+                    _buildActionButton(
+                        Icons.autorenew, 'Auto', Colors.blueAccent, () {
                       // Auto mode logic
                     }),
                   ],
@@ -14798,7 +16595,8 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
     );
   }
 
-  Widget _buildConveyorCard(String title, String subtitle, double speed, IconData icon, Color color, Function(double) onChanged) {
+  Widget _buildConveyorCard(String title, String subtitle, double speed,
+      IconData icon, Color color, Function(double) onChanged) {
     return Card(
       color: Color(0xFF1E1E2C),
       child: Padding(
@@ -14821,15 +16619,22 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title, 
-                          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                      Text(title,
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold)),
                       Text(subtitle,
-                          style: TextStyle(color: Colors.white70, fontSize: 12)),
+                          style:
+                              TextStyle(color: Colors.white70, fontSize: 12)),
                     ],
                   ),
                 ),
-                Text('${(speed * 100).round()}%', 
-                    style: TextStyle(color: color, fontSize: 24, fontWeight: FontWeight.bold)),
+                Text('${(speed * 100).round()}%',
+                    style: TextStyle(
+                        color: color,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold)),
               ],
             ),
             SizedBox(height: 15),
@@ -14858,7 +16663,8 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
     );
   }
 
-  Widget _buildSystemControl(String title, String subtitle, bool value, IconData icon, Color color, Function(bool) onChanged) {
+  Widget _buildSystemControl(String title, String subtitle, bool value,
+      IconData icon, Color color, Function(bool) onChanged) {
     return Container(
       padding: EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -14880,8 +16686,10 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(color: Colors.white, fontSize: 16)),
-                Text(subtitle, style: TextStyle(color: Colors.white54, fontSize: 12)),
+                Text(title,
+                    style: TextStyle(color: Colors.white, fontSize: 16)),
+                Text(subtitle,
+                    style: TextStyle(color: Colors.white54, fontSize: 12)),
               ],
             ),
           ),
@@ -14908,8 +16716,11 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
               valueColor: AlwaysStoppedAnimation<Color>(color),
               strokeWidth: 6,
             ),
-            Text('${(value * 100).round()}%', 
-                style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+            Text('${(value * 100).round()}%',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold)),
           ],
         ),
         SizedBox(height: 5),
@@ -14932,14 +16743,19 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
             Icon(icon, color: Colors.white70, size: 16),
             SizedBox(height: 5),
             Text(title, style: TextStyle(color: Colors.white54, fontSize: 10)),
-            Text(value, style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+            Text(value,
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildActionButton(IconData icon, String label, Color color, VoidCallback onPressed) {
+  Widget _buildActionButton(
+      IconData icon, String label, Color color, VoidCallback onPressed) {
     return Column(
       children: [
         Container(
@@ -14963,16 +16779,19 @@ class _DualConveyorControlScreenState extends State<DualConveyorControlScreen> {
 class HydrobotValveControlsScreen extends StatefulWidget {
   final VoidCallback onNext;
 
-  const HydrobotValveControlsScreen({Key? key, required this.onNext}) : super(key: key);
+  const HydrobotValveControlsScreen({Key? key, required this.onNext})
+      : super(key: key);
 
   @override
-  _HydrobotValveControlsScreenState createState() => _HydrobotValveControlsScreenState();
+  _HydrobotValveControlsScreenState createState() =>
+      _HydrobotValveControlsScreenState();
 }
 
-class _HydrobotValveControlsScreenState extends State<HydrobotValveControlsScreen> {
+class _HydrobotValveControlsScreenState
+    extends State<HydrobotValveControlsScreen> {
   double _valve1Position = 0.0;
   double _valve2Position = 0.0;
-  
+
   ValveStatus _valve1Status = ValveStatus.closed;
   ValveStatus _valve2Status = ValveStatus.closed;
 
@@ -15011,7 +16830,7 @@ class _HydrobotValveControlsScreenState extends State<HydrobotValveControlsScree
                     Colors.blueAccent,
                   ),
                   SizedBox(height: 20),
-                  
+
                   // Valve 2 Control Card
                   _buildValveControlCard(
                     'Valve 2',
@@ -15022,14 +16841,14 @@ class _HydrobotValveControlsScreenState extends State<HydrobotValveControlsScree
                     Colors.greenAccent,
                   ),
                   SizedBox(height: 20),
-                  
+
                   // System Status Overview
                   _buildSystemStatusCard(),
                 ],
               ),
             ),
           ),
-          
+
           // Control Buttons Section
           Container(
             padding: EdgeInsets.all(16),
@@ -15064,7 +16883,7 @@ class _HydrobotValveControlsScreenState extends State<HydrobotValveControlsScree
                   ),
                 ),
                 SizedBox(height: 12),
-                
+
                 // Next Button
                 ElevatedButton.icon(
                   onPressed: widget.onNext,
@@ -15155,7 +16974,7 @@ class _HydrobotValveControlsScreenState extends State<HydrobotValveControlsScree
             ],
           ),
           SizedBox(height: 20),
-          
+
           // Position Indicator
           Text(
             '${position.round()}% Open',
@@ -15166,7 +16985,7 @@ class _HydrobotValveControlsScreenState extends State<HydrobotValveControlsScree
             ),
           ),
           SizedBox(height: 10),
-          
+
           // Slider Control
           Slider(
             value: position,
@@ -15188,7 +17007,7 @@ class _HydrobotValveControlsScreenState extends State<HydrobotValveControlsScree
             ],
           ),
           SizedBox(height: 20),
-          
+
           // Control Buttons
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -15212,7 +17031,7 @@ class _HydrobotValveControlsScreenState extends State<HydrobotValveControlsScree
                   ),
                 ),
               ),
-              
+
               // Close Button
               Expanded(
                 child: Container(
@@ -15262,8 +17081,10 @@ class _HydrobotValveControlsScreenState extends State<HydrobotValveControlsScree
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildStatusIndicator('Valve 1', _valve1Status, Colors.blueAccent),
-              _buildStatusIndicator('Valve 2', _valve2Status, Colors.greenAccent),
+              _buildStatusIndicator(
+                  'Valve 1', _valve1Status, Colors.blueAccent),
+              _buildStatusIndicator(
+                  'Valve 2', _valve2Status, Colors.greenAccent),
             ],
           ),
           SizedBox(height: 15),
@@ -15272,7 +17093,8 @@ class _HydrobotValveControlsScreenState extends State<HydrobotValveControlsScree
             decoration: BoxDecoration(
               color: _getSystemStatusColor().withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _getSystemStatusColor().withOpacity(0.3)),
+              border:
+                  Border.all(color: _getSystemStatusColor().withOpacity(0.3)),
             ),
             child: Row(
               children: [
@@ -15335,22 +17157,22 @@ class _HydrobotValveControlsScreenState extends State<HydrobotValveControlsScree
   void _updateValve1(double value) {
     setState(() {
       _valve1Position = value;
-      _valve1Status = value == 0 
-          ? ValveStatus.closed 
-          : value == 100 
-            ? ValveStatus.open 
-            : ValveStatus.adjusting;
+      _valve1Status = value == 0
+          ? ValveStatus.closed
+          : value == 100
+              ? ValveStatus.open
+              : ValveStatus.adjusting;
     });
   }
 
   void _updateValve2(double value) {
     setState(() {
       _valve2Position = value;
-      _valve2Status = value == 0 
-          ? ValveStatus.closed 
-          : value == 100 
-            ? ValveStatus.open 
-            : ValveStatus.adjusting;
+      _valve2Status = value == 0
+          ? ValveStatus.closed
+          : value == 100
+              ? ValveStatus.open
+              : ValveStatus.adjusting;
     });
   }
 
@@ -15385,7 +17207,7 @@ class _HydrobotValveControlsScreenState extends State<HydrobotValveControlsScree
       _valve1Status = ValveStatus.closed;
       _valve2Status = ValveStatus.closed;
     });
-    
+
     // Show confirmation
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -15431,9 +17253,11 @@ class _HydrobotValveControlsScreenState extends State<HydrobotValveControlsScree
   }
 
   Color _getSystemStatusColor() {
-    if (_valve1Status == ValveStatus.open || _valve2Status == ValveStatus.open) {
+    if (_valve1Status == ValveStatus.open ||
+        _valve2Status == ValveStatus.open) {
       return Colors.greenAccent;
-    } else if (_valve1Status == ValveStatus.adjusting || _valve2Status == ValveStatus.adjusting) {
+    } else if (_valve1Status == ValveStatus.adjusting ||
+        _valve2Status == ValveStatus.adjusting) {
       return Colors.blueAccent;
     } else {
       return Colors.redAccent;
@@ -15441,9 +17265,11 @@ class _HydrobotValveControlsScreenState extends State<HydrobotValveControlsScree
   }
 
   String _getSystemStatusMessage() {
-    if (_valve1Status == ValveStatus.open || _valve2Status == ValveStatus.open) {
+    if (_valve1Status == ValveStatus.open ||
+        _valve2Status == ValveStatus.open) {
       return 'System Active - Valves are open';
-    } else if (_valve1Status == ValveStatus.adjusting || _valve2Status == ValveStatus.adjusting) {
+    } else if (_valve1Status == ValveStatus.adjusting ||
+        _valve2Status == ValveStatus.adjusting) {
       return 'System Adjusting - Valves are being calibrated';
     } else {
       return 'System Standby - All valves are closed';

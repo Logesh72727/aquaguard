@@ -1,9 +1,3 @@
-android {
-    namespace "fr.g123k.deviceapps"
-}
-
-
-
 allprojects {
     repositories {
         google()
@@ -11,14 +5,29 @@ allprojects {
     }
 }
 
+subprojects {
+    afterEvaluate {
+        if (project.hasProperty("android")) {
+            val android = project.extensions.getByName("android") as? com.android.build.gradle.BaseExtension
+            android?.let {
+                if (it.namespace == null) {
+                    if (project.name == "device_apps") {
+                        it.namespace = "fr.g123k.deviceapps"
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
 val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
 rootProject.layout.buildDirectory.value(newBuildDir)
 
 subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
-}
-subprojects {
     project.evaluationDependsOn(":app")
 }
 
